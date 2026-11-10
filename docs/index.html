@@ -1,0 +1,1409 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="מזל יומי">
+<meta name="theme-color" content="#14213d">
+<meta name="robots" content="noindex">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<title>מזל יומי</title>
+<title>מזל יומי עברי</title>
+<!--
+  Changes made in Claude Code on 2026-10-31 (artifact versions 6-9). Build on the live version of this page, not an older copy.
+  - Libraries from jsdelivr: @hebcal/core 6.14.4 (holidays for Israel or diaspora by city, parasha, molad, Kiddush Levana window,
+    sunrise and sunset, name gematria) and astronomy-engine 2.1.19 (planet longitudes of date, sign-change times, moon illumination,
+    moonrise and moonset).
+  - The original formulas stay as a fallback if the CDN fails: lonOfBuiltin, sunTimesBuiltin, eventsBuiltin.
+  - "סודות היום" also shows Daf Yomi, Mishna Yomi and Daily Rambam (3-chapter and 1-chapter tracks), computed in the page
+    (DAF and LEARN blocks) with links to Sefaria. They were checked day by day against @hebcal/learning: Daf Yomi 1975-2035,
+    Mishna Yomi 1947-2040, Daily Rambam 1984-2040, with no differences.
+  Changes made in Claude Code on 2026-11-04, from the suggestions page the owner ticked
+  (https://claude.ai/artifact/GndjaqGqcXnkV8a6Y7MwNy). Working copy and tests: ~/projects/mazal-yomi.
+  - Times and "today" follow the selected city's time zone (tzp, zt, hm).
+  - The fallback formulas add precession (worst error 0.38° -> 0.08° in 2026).
+  - Scoring: smooth passage across sign boundaries (softScore), the Moon taken every hour 06:00-23:00 (dayModel),
+    no random noise, a visible breakdown, a level legend, strength bars on the planets' influences.
+  - House / height / lowliness of each planet (DIGN), from ברייתא דשמואל הקטן and ברייתא דמזלות (Otzar Midrashim).
+  - 301 searchable cities (CITY_DATA, combo()). Optional birth time and birth city: the planetary hour of birth (birthHour,
+    checked 300/300 against Astronomy Engine sunrise/sunset) and automatic after-sunset. Family profiles: localStorage
+    'mazal-family' and the viewer's private db doc data/users/<id>/family {list, active}; doc 'profile' keeps the first one.
+  - Hebrew month calendar (dayCached), a daily Pirkei Avot mishna (AVOT, Torat Emet via Sefaria), a share card image
+    (shareCard, downloads capability), and a world map of the birth chart's lines (mapLines: checked so every point puts
+    its body on the horizon or the meridian; land from Natural Earth 1:110m).
+  - Design: a night band with stars for the sky and the Moon, a gold callout for the day's recommendations,
+    a sticky quick-navigation bar, and a star field behind the page in dark mode.
+-->
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+/* Layout: single phone column. Luach header, mazal seal, day nav, then forecast, sky map, moon, planetary hours */
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --ink:#18233a; --muted:#5b667c; --line:#d5dbe4;
+  --techelet:#1f4e8c; --techelet-soft:#e3ebf6; --gold:#a8791f; --gold-soft:#f6eedc;
+  --good:#2f7a4b; --good-soft:#e2f1e7; --warn:#a8621f; --warn-soft:#f8eadb;
+  --p0:#5b4b8a; --p1:#2f7a4b; --p2:#b23a2a; --p3:#a8791f; --p4:#b0457f; --p5:#127a8a; --p6:#1f4e8c;
+  --night:#14213d; --night-soft:#1b2a4a; --night-ink:#e7ebf3; --night-muted:#aab5ca; --night-line:#2d3d60; --star:#f3e6c4; --stars-op:0;
+  --display:"Frank Ruhl Libre","Times New Roman",serif;
+  --body:"Rubik","Arial Hebrew",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1624; --surface:#172034; --ink:#e7ebf3; --muted:#9aa5bb; --line:#2a3550;
+  --techelet:#7fa8e6; --techelet-soft:#1c2c4a; --gold:#e0b45a; --gold-soft:#2c2618;
+  --good:#6cc28d; --good-soft:#18301f; --warn:#e3a35e; --warn-soft:#33240f;
+  --p0:#a99be0; --p1:#6cc28d; --p2:#f08a73; --p3:#e8c15a; --p4:#ec8cc0; --p5:#5fc8d6; --p6:#8fb3ee;
+  --night:#0a1120; --night-soft:#131d33; --night-line:#26324e; --stars-op:.55; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1624; --surface:#172034; --ink:#e7ebf3; --muted:#9aa5bb; --line:#2a3550;
+  --techelet:#7fa8e6; --techelet-soft:#1c2c4a; --gold:#e0b45a; --gold-soft:#2c2618;
+  --good:#6cc28d; --good-soft:#18301f; --warn:#e3a35e; --warn-soft:#33240f;
+  --p0:#a99be0; --p1:#6cc28d; --p2:#f08a73; --p3:#e8c15a; --p4:#ec8cc0; --p5:#5fc8d6; --p6:#8fb3ee;
+  --night:#0a1120; --night-soft:#131d33; --night-line:#26324e; --stars-op:.55; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;direction:rtl;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:2px solid var(--ink);padding-bottom:10px}
+h1{font-family:var(--display);font-weight:900;font-size:2rem;line-height:1;margin:0}
+.today{font-family:var(--display);font-size:1rem;color:var(--muted);text-align:left}
+.today b{display:block;color:var(--ink);font-size:1.15rem}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+label{font-size:.85rem;color:var(--muted);display:block;margin-bottom:4px}
+input[type=date],input[type=text],input[type=time],select{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.check{display:flex;align-items:center;gap:8px;font-size:.92rem;color:var(--ink);margin-top:22px}
+.check input{width:20px;height:20px;accent-color:var(--techelet)}
+.check label{margin:0;color:inherit;font-size:inherit}
+button{font:inherit;cursor:pointer}
+.btn{width:100%;margin-top:14px;background:var(--techelet);color:var(--surface);border:0;border-radius:10px;padding:12px;font-weight:600;font-size:1rem}
+.btn:focus-visible,.nav button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.sample{font-size:.8rem;color:var(--warn);margin-top:8px}
+.actions{display:flex;gap:10px;align-items:stretch;margin-top:14px}
+.actions .btn{margin-top:0;flex:1}
+.ghost{background:transparent;border:1px solid var(--line);color:var(--techelet);border-radius:999px;padding:6px 14px;font-size:.88rem;font-weight:500;white-space:nowrap}
+.actions .ghost{border-radius:10px;padding-inline:18px}
+.ghost:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.profile{display:flex;flex-direction:column;gap:10px;padding-block:12px}
+.ptabs{display:flex;flex-wrap:wrap;gap:6px}
+.ptab{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:5px 14px;font-size:.9rem;font-weight:500}
+.ptab.on{background:var(--techelet);border-color:var(--techelet);color:var(--surface)}
+.ptab:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.prow #pInfo{font-size:.84rem;color:var(--muted);min-width:0}
+.pbtns{display:flex;gap:6px}
+.combo{position:relative}
+.combo ul{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgb(0 0 0 / .14);max-height:288px;overflow:auto}
+.combo li{padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.combo li small{color:var(--muted);font-size:.8rem}
+.combo li[aria-selected="true"]{background:var(--techelet-soft)}
+.hint{display:block;font-size:.78rem;color:var(--muted);line-height:1.35;margin-top:4px}
+.danger{background:transparent;border:1px solid var(--warn);color:var(--warn);border-radius:10px;padding-inline:14px;font-size:.88rem}
+.fam{display:flex;flex-direction:column;gap:12px}
+.fam div{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:baseline}
+.fam p{grid-column:1/-1;margin:0;font-size:.92rem}
+.toast{font-size:.82rem;color:var(--good);margin-top:8px}
+.quad{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tile .k{font-size:.75rem;color:var(--muted)}
+.tile .v{font-family:var(--display);font-weight:700;font-size:1.5rem;line-height:1.2;color:var(--ink)}
+.tile .v.big{font-size:2.4rem;color:var(--techelet);font-variant-numeric:tabular-nums}
+.tile small{font-size:.78rem;color:var(--muted);line-height:1.4}
+.stars{color:var(--gold);letter-spacing:2px;font-size:.95rem;white-space:nowrap}
+.stars i{color:var(--line);font-style:normal}
+.summary{font-size:1.02rem;margin:0 0 4px}
+.why summary{margin-top:6px}
+.why p{font-size:.92rem;margin:10px 0 0}
+.duo2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dolist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.dolist li{padding-right:20px;position:relative}
+.dolist.do li::before{content:"✓";position:absolute;right:0;color:var(--good);font-weight:700}
+.dolist.dont li::before{content:"✕";position:absolute;right:0;color:var(--warn);font-weight:700}
+.acts{display:flex;flex-direction:column}
+.act{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.act:last-child{border-bottom:0}
+.act b{font-weight:600;font-size:.95rem}
+.act .when{grid-column:1/-1;font-size:.84rem;color:var(--muted)}
+.act .when time,.tile .v.t{direction:ltr;unicode-bidi:isolate;display:inline-block}
+.act .when time{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:500}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.wd{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;padding:8px 2px;border-radius:10px;border:1px solid transparent;background:none;color:var(--ink);font:inherit;cursor:pointer;min-width:0}
+.wd.on{border-color:var(--techelet);background:var(--techelet-soft)}
+.wd .dn{font-size:.72rem;color:var(--muted)}
+.wd .hd{font-family:var(--display);font-weight:700;font-size:.95rem}
+.wd .bar{width:10px;height:48px;border-radius:999px;background:var(--techelet-soft);position:relative;overflow:hidden}
+.wd .bar i{position:absolute;bottom:0;left:0;right:0;border-radius:999px;background:var(--techelet)}
+.wd .bar i.good{background:var(--good)}.wd .bar i.low{background:var(--warn)}
+.wd .sc{font-size:.72rem;font-variant-numeric:tabular-nums;color:var(--muted)}
+.wd .tip{font-size:.66rem;color:var(--muted);line-height:1.25}
+.secrets{display:flex;flex-direction:column;gap:14px}
+.secret h4{font-family:var(--display);font-size:1.1rem;margin:0 0 2px;color:var(--gold)}
+.secret p{margin:0;font-size:.93rem}
+.secret cite{display:block;font-style:normal;font-size:.76rem;color:var(--muted);margin-top:2px}
+.secret a{color:var(--techelet);font-weight:500}
+@media (max-width:420px){.duo2{grid-template-columns:1fr}.wd .tip{display:none}}
+.seal{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+.disc{width:96px;height:96px;border-radius:50%;border:3px double var(--gold);background:var(--gold-soft);display:grid;place-items:center;position:relative}
+.disc span{font-family:var(--display);font-weight:900;font-size:3rem;color:var(--gold);line-height:1}
+.disc small{position:absolute;bottom:8px;font-size:.65rem;letter-spacing:.06em;color:var(--muted)}
+.seal h2{font-family:var(--display);font-size:2.1rem;margin:0;line-height:1.1}
+.seal p{margin:4px 0 0;color:var(--muted);font-size:.92rem}
+.nav{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.nav button{background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:.9rem;white-space:nowrap}
+.nav div{font-family:var(--display);font-weight:700;text-align:center}
+.nav div small{display:block;font-family:var(--body);font-weight:400;color:var(--muted);font-size:.78rem}
+.eyebrow{font-size:.75rem;letter-spacing:.08em;color:var(--techelet);font-weight:600;margin:0 0 6px}
+h3{font-family:var(--display);font-size:1.45rem;line-height:1.25;margin:0 0 10px;text-wrap:balance}
+.forecast p{margin:0 0 12px}.forecast p:last-child{margin:0}
+.forecast p b{color:var(--techelet);font-weight:600}
+.events{display:flex;flex-wrap:wrap;gap:8px}
+.events span{font-size:.85rem;padding:5px 12px;border-radius:999px;background:var(--gold-soft);color:var(--gold);font-weight:500}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.num{text-align:center}
+.num .big{font-family:var(--display);font-weight:900;font-size:3.4rem;line-height:1;color:var(--techelet);font-variant-numeric:tabular-nums}
+.num .gem{color:var(--gold);font-family:var(--display);font-size:1.2rem}
+.meter{height:8px;border-radius:999px;background:var(--techelet-soft);overflow:hidden;margin:8px 0 6px}
+.meter i{display:block;height:100%;background:var(--techelet);border-radius:999px}
+.meter i.good{background:var(--good)}.meter i.low{background:var(--warn)}
+.energy .val{font-family:var(--display);font-size:1.6rem;font-weight:700}
+.energy small{color:var(--muted);font-size:.82rem;display:block;line-height:1.4}
+.areas{display:flex;flex-direction:column;gap:14px}
+.area .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.area .top b{font-weight:600}
+.area .top span{font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.area p{margin:0;font-size:.93rem}
+.area small{color:var(--muted);font-size:.78rem}
+.sky{display:grid;grid-template-columns:1fr;gap:12px}
+.sky svg{width:100%;max-width:320px;height:auto;margin:0 auto;display:block}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+td,th{padding:7px 4px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top}
+th{font-weight:500;color:var(--muted);font-size:.78rem}
+tr:last-child td{border-bottom:0}
+td.deg{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.chip{display:inline-block;font-size:.75rem;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.chip.g{background:var(--good-soft);color:var(--good)}.chip.w{background:var(--warn-soft);color:var(--warn)}.chip.n{background:var(--techelet-soft);color:var(--techelet)}
+.retro{color:var(--warn);font-size:.75rem;display:block}
+.ing{color:var(--techelet);font-size:.75rem;display:block}
+.aspects{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.aspects div{font-size:.92rem;padding-right:10px;border-right:3px solid var(--line)}
+.aspects div.g{border-color:var(--good)}.aspects div.w{border-color:var(--warn)}
+.moon{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+.moon canvas{width:84px;height:84px}
+.moon p{margin:0 0 6px;font-size:.93rem}.moon p:last-child{margin:0}
+.hours{display:flex;flex-direction:column}
+.hr{display:grid;grid-template-columns:52px 64px 1fr;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:.88rem;align-items:baseline}
+.hr:last-child{border-bottom:0}
+.hr time{font-variant-numeric:tabular-nums;color:var(--muted)}
+.hr b{font-weight:600}
+.hr.mine b{color:var(--gold)}
+.hr.now{background:var(--techelet-soft);border-radius:8px;padding-inline:8px;margin-inline:-8px}
+.hr .tag{font-size:.7rem;color:var(--gold);display:block}
+details summary{cursor:pointer;color:var(--techelet);font-weight:500;margin-top:10px}
+ol.recs{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+ol.recs li{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start}
+ol.recs li b{width:28px;height:28px;border-radius:50%;background:var(--techelet-soft);color:var(--techelet);display:grid;place-items:center;font-size:.85rem}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}
+dt{color:var(--muted);font-size:.88rem}dd{margin:0;font-weight:500}
+.note{font-size:.8rem;color:var(--muted);line-height:1.5}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tags span{font-size:.8rem;padding:3px 10px;border-radius:999px;border:1px solid var(--line)}
+.tags .care{border-color:var(--warn);color:var(--warn)}
+/* energy levels: the same four colors on the meter, the week, the hours and the legend */
+.meter i.lv0,.wd .bar i.lv0,.hbars i.lv0,.lgd .lv0{background:var(--warn)}
+.meter i.lv1,.wd .bar i.lv1,.hbars i.lv1,.lgd .lv1{background:var(--muted)}
+.meter i.lv2,.wd .bar i.lv2,.hbars i.lv2,.lgd .lv2{background:var(--techelet)}
+.meter i.lv3,.wd .bar i.lv3,.hbars i.lv3,.lgd .lv3{background:var(--good)}
+.hsum{margin:0 0 10px;font-size:.93rem}
+.hwrap{position:relative;padding-top:24px}
+.hbars{display:flex;align-items:flex-end;gap:3px;height:96px;border-bottom:1px solid var(--line)}
+.hbars i{flex:1;min-width:0;border-radius:3px 3px 0 0}
+.hbars i.now{box-shadow:0 0 0 2px var(--gold)}
+.hax{display:flex;gap:3px;height:18px;font-size:.7rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.hax span{flex:1;min-width:0;text-align:center;overflow:visible;white-space:nowrap}
+.hmark{position:absolute;top:0;bottom:18px;width:0;border-right:2px dashed var(--gold)}
+.hmark span{position:absolute;top:0;right:-1px;transform:translateX(50%);white-space:nowrap;font-size:.72rem;font-weight:600;color:var(--gold);background:var(--surface);padding:0 4px;direction:rtl}
+.hmark.edge-r span{transform:none;right:-2px}.hmark.edge-l span{transform:translateX(100%)}
+.brk{display:flex;flex-direction:column;gap:7px;margin-top:16px}
+.brk .r{display:grid;grid-template-columns:minmax(0,1fr) 34% 40px;gap:8px;align-items:center;font-size:.86rem}
+.brk .tr{height:8px;border-radius:999px;background:var(--techelet-soft);position:relative}
+.brk .tr::after{content:"";position:absolute;top:-3px;bottom:-3px;left:50%;width:1px;background:var(--muted)}
+.brk .tr b{position:absolute;top:0;bottom:0;border-radius:999px}
+.brk .tr b.p{left:50%;background:var(--good)}.brk .tr b.m{right:50%;background:var(--warn)}
+.brk .v{text-align:left;direction:ltr;font-variant-numeric:tabular-nums;font-weight:600}
+.brk .base{color:var(--muted)}
+.brk .tot{border-top:1px solid var(--line);padding-top:8px;font-weight:600}
+.brk .tot .v{font-family:var(--display);font-size:1.2rem;color:var(--techelet)}
+.lgd{margin-top:16px}
+.lgd .sc{display:grid;grid-template-columns:20fr 18fr 20fr 20fr;gap:2px;position:relative}
+.lgd .sc span{height:8px}
+.lgd .sc span:first-child{border-radius:0 999px 999px 0}.lgd .sc span:nth-child(4){border-radius:999px 0 0 999px}
+.lgd .pin{position:absolute;top:-5px;width:4px;height:18px;border-radius:2px;background:var(--ink);transform:translateX(50%)}
+.lgd .lb{display:grid;grid-template-columns:20fr 18fr 20fr 20fr;gap:2px;text-align:center;font-size:.72rem;color:var(--muted);line-height:1.3;margin-top:6px}
+.lgd .lb b{display:block;color:var(--ink);font-weight:500}
+.aspects .str{display:block;height:5px;border-radius:999px;background:var(--techelet-soft);margin-top:6px;overflow:hidden;max-width:240px}
+.aspects .str b{display:block;height:100%;border-radius:999px;background:var(--muted)}
+.aspects .str.g b{background:var(--good)}.aspects .str.w b{background:var(--warn)}
+.dgn{display:block;font-size:.72rem;font-weight:500}.dgn.g{color:var(--good)}.dgn.w{color:var(--warn)}
+/* the sky and the Moon sit on a night band (the same dark look in both themes) */
+#starsBg{position:fixed;inset:0;width:100%;height:100%;z-index:-1;pointer-events:none;opacity:var(--stars-op)}
+.nightband{position:relative;isolation:isolate;border-radius:18px;border:1px solid var(--night-line);padding:14px;display:flex;flex-direction:column;gap:12px;background:var(--night);color:var(--night-ink);
+  --surface:var(--night-soft);--bg:var(--night);--ink:var(--night-ink);--muted:var(--night-muted);--line:var(--night-line);
+  --techelet:#9dbcf0;--techelet-soft:#22335a;--gold:#e0b45a;--gold-soft:#2c2618;--good:#6cc28d;--good-soft:#18301f;--warn:#e3a35e;--warn-soft:#33240f}
+.nightband .bandstars{position:absolute;inset:0;width:100%;height:100%;z-index:-1;border-radius:inherit;pointer-events:none}
+.nightband .panel{background:transparent;border-color:var(--night-line)}
+.nightband .bandtitle{font-family:var(--display);font-size:1.35rem;font-weight:700;margin:2px 4px 0;color:var(--night-ink)}
+/* the day's recommendations as a gold callout */
+.callout{background:var(--gold-soft);border-color:var(--gold)}
+.callout .eyebrow{color:var(--gold)}
+.callout ol.recs li b{background:var(--surface);color:var(--gold)}
+/* quick navigation that stays at the top while scrolling */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.jump{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-block:8px;background:var(--bg);border-bottom:1px solid var(--line)}
+.jump::-webkit-scrollbar{display:none}
+.jump button{flex:none;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:4px 12px;font-size:.84rem;white-space:nowrap}
+.jump button.on{border-color:var(--techelet);background:var(--techelet-soft);color:var(--techelet);font-weight:600}
+.jump button:focus-visible{outline:3px solid var(--gold);outline-offset:1px}
+.wrap>section,.wrap>.nightband{scroll-margin-top:64px}
+.sharerow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sharerow .note{margin:0}
+.avot{position:relative;padding-top:22px}
+.avot::before{content:"״";position:absolute;top:-6px;right:14px;font-family:var(--display);font-size:4.2rem;line-height:1;color:var(--gold)}
+.avot blockquote{margin:0;font-family:var(--display);font-size:1.12rem;line-height:1.55;font-weight:500}
+.avrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.avrow cite{font-style:normal;font-size:.8rem;color:var(--muted)}
+.avrow a{color:var(--techelet)}
+.calnav{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.calnav b{font-family:var(--display);font-size:1.15rem}
+.calnav button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:4px 12px;font-size:.84rem;white-space:nowrap}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal .dh{font-size:.72rem;color:var(--muted);text-align:center}
+.cal button{position:relative;aspect-ratio:1/1;max-width:100%;border:0;border-radius:8px;font-family:var(--display);font-weight:700;font-size:.95rem;color:var(--ink);padding:0;min-width:0;background:var(--bg)}
+.cal .c0{background:var(--warn-soft);color:var(--warn)}.cal .c1{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.cal .c2{background:var(--techelet-soft);color:var(--techelet)}.cal .c3{background:var(--good-soft);color:var(--good)}
+.cal .sel,.cal .c1.sel{box-shadow:0 0 0 2px var(--techelet)}
+.cal .td::after{content:"";position:absolute;bottom:5px;left:50%;width:14px;height:2px;margin-left:-7px;background:var(--gold);border-radius:1px}
+.cal .ev::before{content:"";position:absolute;top:5px;right:5px;width:5px;height:5px;border-radius:50%;background:var(--gold)}
+.cal button:focus-visible,.calnav button:focus-visible,.pchip:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.mapbox svg{width:100%;height:auto;display:block;border-radius:10px}
+.mapbox .sea{fill:var(--techelet-soft)}
+.mapbox .land{fill:var(--surface);stroke:var(--line);stroke-width:.3}
+.mapbox .grat{stroke:var(--line);stroke-width:.25;fill:none}
+.mapbox .ln line,.mapbox .ln polyline{fill:none;stroke-width:1.7;vector-effect:non-scaling-stroke}
+.mapbox .ln .mc{stroke-width:2.6}
+.mapbox .ln .dc polyline{stroke-dasharray:6 4}
+.mapbox .ln .ic{stroke-dasharray:1.5 3.5}
+.mapbox .city{fill:var(--ink);stroke:var(--surface);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.pchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:999px;padding:4px 12px;font-size:.85rem}
+.pchip i{width:14px;height:4px;border-radius:2px;background:var(--c)}
+.pchip.on{border-color:var(--c);box-shadow:inset 0 0 0 1px var(--c);font-weight:600}
+.maplist{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
+.maplist li{padding-right:12px;border-right:3px solid var(--c)}
+.maplist small{color:var(--muted)}
+@media (min-width:540px){.sky{grid-template-columns:1fr 1fr;align-items:start}}
+@media (max-width:400px){.row{grid-template-columns:1fr}.check{margin-top:0}}
+@media (max-width:360px){.duo{grid-template-columns:1fr}.seal{grid-template-columns:1fr;justify-items:center;text-align:center}}
+</style>
+
+<canvas id="starsBg" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header>
+    <h1>מזל יומי</h1>
+    <div class="today" id="todayHeb"></div>
+  </header>
+
+  <section class="panel profile" id="profileBar" hidden>
+    <div class="ptabs" id="ptabs" role="group" aria-label="הפרופילים במשפחה"></div>
+    <div class="prow"><span id="pInfo"></span><span class="pbtns"><button type="button" class="ghost" id="addBtn">+ הוסף פרופיל</button><button type="button" class="ghost" id="editBtn">ערוך</button></span></div>
+  </section>
+
+  <form class="panel" id="form">
+    <p class="eyebrow" id="formTitle">הפרופיל שלך</p>
+    <div class="row">
+      <div><label for="bdate">תאריך לידה (לועזי)</label><input type="date" id="bdate" required></div>
+      <div><label for="btime">שעת לידה (לא חובה)</label><input type="time" id="btime"></div>
+      <div><label for="bcity">עיר הלידה</label><div class="combo"><input type="text" id="bcity" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="bcityList" autocomplete="off" spellcheck="false"><ul id="bcityList" role="listbox" aria-label="ערים" hidden></ul></div></div>
+      <div><div class="check"><input type="checkbox" id="sunset"><label for="sunset">נולדתי אחרי השקיעה</label></div><small class="hint" id="sunsetHint"></small></div>
+      <div><label for="bname">שם (לא חובה)</label><input type="text" id="bname" placeholder="למשל: אביב"></div>
+      <div><label for="city">עיר מגורים (לשעות ולחגים)</label><div class="combo"><input type="text" id="city" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cityList" autocomplete="off" spellcheck="false"><ul id="cityList" role="listbox" aria-label="ערים" hidden></ul></div></div>
+    </div>
+    <p class="hint" style="margin:8px 0 0">עם שעת לידה אפשר לדעת באיזו שעת כוכב נולדת (״מזל שעה״), והאפליקציה גם תדע לבד אם נולדת אחרי השקיעה.</p>
+    <div class="actions"><button class="btn" type="submit">שמור פרופיל</button><button type="button" class="ghost" id="cancelBtn" hidden>ביטול</button><button type="button" class="danger" id="delBtn" hidden>מחק</button></div>
+    <div class="sample" id="sampleNote" hidden>מוצגת תחזית לדוגמה. מלא את הפרטים ושמור פעם אחת, ובפעם הבאה התחזית שלך תיפתח ישר.</div>
+  </form>
+
+  <section class="panel seal" id="seal"></section>
+
+  <div class="nav">
+    <button type="button" id="prev">→ אתמול</button>
+    <div id="dayLabel"></div>
+    <button type="button" id="next">מחר ←</button>
+  </div>
+
+  <nav class="jump" id="jump" aria-label="מעבר מהיר בין החלקים"></nav>
+
+  <div class="events" id="events"></div>
+
+  <section class="panel forecast" id="forecast"></section>
+  <div class="sharerow" id="shareRow" hidden><button type="button" class="ghost" id="shareBtn">שתף או שמור את כרטיס היום</button><span class="note" id="shareMsg" role="status"></span></div>
+
+  <div class="quad" id="quick"></div>
+
+  <section class="panel callout" id="recsP"><p class="eyebrow">מומלץ להיום</p><ol class="recs" id="recs"></ol></section>
+
+  <section class="panel" id="energyP"><p class="eyebrow">האנרגיה של היום, שעה אחר שעה</p>
+    <div id="hourly"></div>
+    <div class="brk" id="breakdown"></div>
+    <div class="lgd" id="legend"></div>
+  </section>
+
+  <section class="panel"><p class="eyebrow">ההורוסקופ שלך לפי תחומים</p><div class="areas" id="areas"></div></section>
+
+  <div class="duo2">
+    <section class="panel"><p class="eyebrow">כדאי היום</p><ul class="dolist do" id="doList"></ul></section>
+    <section class="panel"><p class="eyebrow">עדיף להימנע</p><ul class="dolist dont" id="dontList"></ul></section>
+  </div>
+
+  <section class="panel avot" id="avotP"><p class="eyebrow">משנה מפרקי אבות</p><blockquote id="avotQ"></blockquote>
+    <div class="avrow"><cite id="avotC"></cite><button type="button" class="ghost" id="avotN">משנה אחרת</button></div></section>
+
+  <section class="panel"><p class="eyebrow">מתי לעשות מה: מתכנן פעולות להיום</p>
+    <p class="note" style="margin:0 0 8px">לכל פעולה: כמה היום מתאים לה, ובאיזו שעה היום הכי כדאי לעשות אותה.</p>
+    <div class="acts" id="acts"></div></section>
+
+  <section class="panel" id="weekP"><p class="eyebrow">השבוע הקרוב</p><div class="week" id="week"></div></section>
+
+  <section class="panel" id="monthP"><p class="eyebrow">לוח החודש</p>
+    <div class="calnav"><button type="button" id="calPrev">→ החודש הקודם</button><b id="calT"></b><button type="button" id="calNext">החודש הבא ←</button></div>
+    <div class="cal" id="cal"></div>
+    <p class="note" style="margin:10px 0 0">כל יום צבוע לפי האנרגיה שלו: כתום שקטה, אפור מאוזנת, כחול טובה, ירוק גבוהה. נקודה זהובה: חג, ראש חודש או יום מיוחד. לחיצה על יום פותחת אותו.</p>
+  </section>
+
+  <section class="panel" id="secretsP"><p class="eyebrow">סודות היום</p><div class="secrets" id="secrets"></div></section>
+
+  <div class="nightband" id="skyBand"><canvas class="bandstars" aria-hidden="true"></canvas>
+  <p class="bandtitle">השמיים הלילה והיום</p>
+  <section class="panel"><p class="eyebrow">מפת השמיים היום</p>
+    <div class="sky"><div id="wheel"></div><div style="overflow-x:auto"><table id="planets"></table></div></div>
+    <p class="note" style="margin:8px 0 0">בביתו, בגובהו ובשפלותו: המקומות שבהם כוח הכוכב גדל או נחלש, לפי ברייתא דשמואל הקטן.</p>
+    <p class="eyebrow" style="margin-top:14px">השפעות הכוכבים עליך</p>
+    <p class="note" style="margin:0 0 6px">הפס מראה כמה כל כוכב משפיע על הציון היום. ללבנה משקל כפול.</p>
+    <div class="aspects" id="aspects"></div>
+  </section>
+
+  <section class="panel"><p class="eyebrow">הלבנה</p><div class="moon"><canvas id="moonC" width="168" height="168"></canvas><div id="moonTxt"></div></div></section>
+  </div>
+
+  <section class="panel" id="hoursP"><p class="eyebrow">שעות הכוכבים (שעות זמניות)</p>
+    <p class="note" style="margin:0 0 8px" id="hoursIntro"></p>
+    <div class="hours" id="dayHours"></div>
+    <details><summary>שעות הלילה</summary><div class="hours" id="nightHours"></div></details>
+  </section>
+
+  <section class="panel" id="mapP"><p class="eyebrow">המפה שלך: איפה בעולם הכוכבים שלך חזקים</p>
+    <p class="note" style="margin:0 0 10px">ברגע הלידה, כל כוכב עלה, שקע או עמד באמצע השמיים במקום אחר בעולם. הקווים מסמנים את המקומות האלה, ולפי שיטת המפות האסטרולוגיות, ליד הקו של כוכב התחום שלו מורגש יותר. להשראה בלבד.</p>
+    <div class="mapbox" id="mapBox"></div>
+  </section>
+
+  <section class="panel"><p class="eyebrow">כרטיס המזל שלך</p><dl id="details"></dl><div class="tags" id="tags"></div></section>
+
+  <section class="panel" id="familyP" hidden><p class="eyebrow">התאמה במשפחה, לפי היסודות</p><div class="fam" id="family"></div></section>
+
+  <p class="note">המזל שלך נקבע לפי החודש העברי שבו נולדת, על פי ספר יצירה. מיקומי הכוכבים וזמני המעבר בין המזלות מחושבים לכל יום בספריית Astronomy Engine, והמזלות נמדדים כמו אצל הרמב״ם (הלכות קידוש החודש). החגים, פרשת השבוע, המולד, זמן קידוש לבנה והזריחה והשקיעה מחושבים בספריית Hebcal, לפי ארץ ישראל או לפי חו״ל בהתאם לעיר שבחרת. שעות הכוכבים וסגולות יום הלידה לקוחים מגמרא שבת קנ״ו. היום העברי מתחיל בשקיעה, ולכן חשוב לסמן אם נולדת אחרי השקיעה, או פשוט להזין את שעת הלידה. חז״ל לימדו ש״אין מזל לישראל״: תפילה, תשובה וצדקה גוברים על כל מזל. התחזית נועדה להשראה ולמחשבה טובה.</p>
+</div>
+
+<style>
+/* iPhone app: keep the top and bottom clear of the status bar and the home indicator */
+html{-webkit-text-size-adjust:100%}
+body{padding-top:calc(20px + env(safe-area-inset-top,0px));padding-bottom:calc(40px + env(safe-area-inset-bottom,0px));-webkit-tap-highlight-color:transparent}
+</style>
+<script src="lib/hebcal-core.min.js"></script>
+<script src="lib/astronomy.browser.min.js"></script>
+<script>
+//ASTRO-START
+const rad=Math.PI/180, norm=x=>((x%360)+360)%360, S=Math.sin;
+const jd=d=>d.getTime()/86400000+2440587.5;
+// JPL approximate Keplerian elements (J2000): a,da,e,de,I,dI,L,dL,peri,dperi,node,dnode (per century)
+const EL={
+ mercury:[0.38709927,0.00000037,0.20563593,0.00001906,7.00497902,-0.00594749,252.25032350,149472.67411175,77.45779628,0.16047689,48.33076593,-0.12534081],
+ venus:[0.72333566,0.00000390,0.00677672,-0.00004107,3.39467605,-0.00078890,181.97909950,58517.81538729,131.60246718,0.00268329,76.67984255,-0.27769418],
+ earth:[1.00000261,0.00000562,0.01671123,-0.00004392,-0.00001531,-0.01294668,100.46457166,35999.37244981,102.93768193,0.32327364,0,0],
+ mars:[1.52371034,0.00001847,0.09339410,0.00007882,1.84969142,-0.00813131,-4.55343205,19140.30268499,-23.94362959,0.44441088,49.55953891,-0.29257343],
+ jupiter:[5.20288700,-0.00011607,0.04838624,-0.00013253,1.30439695,-0.00183714,34.39644051,3034.74612775,14.72847983,0.21252668,100.47390909,0.20469106],
+ saturn:[9.53667594,-0.00125060,0.05386179,-0.00050991,2.48599187,0.00193609,49.95424423,1222.49362201,92.59887831,-0.41897216,113.66242448,-0.28867794]
+};
+function helio(el,T){
+  const a=el[0]+el[1]*T,e=el[2]+el[3]*T,I=(el[4]+el[5]*T)*rad,L=el[6]+el[7]*T,wb=el[8]+el[9]*T,O=el[10]+el[11]*T;
+  const w=(wb-O)*rad,Om=O*rad;let M=norm(L-wb);if(M>180)M-=360;M*=rad;
+  let E=M+e*Math.sin(M);for(let i=0;i<8;i++)E-=(E-e*Math.sin(E)-M)/(1-e*Math.cos(E));
+  const xp=a*(Math.cos(E)-e),yp=a*Math.sqrt(1-e*e)*Math.sin(E);
+  const cw=Math.cos(w),sw=Math.sin(w),cO=Math.cos(Om),sO=Math.sin(Om),cI=Math.cos(I);
+  return[(cw*cO-sw*sO*cI)*xp+(-sw*cO-cw*sO*cI)*yp,(cw*sO+sw*cO*cI)*xp+(-sw*sO+cw*cO*cI)*yp];
+}
+function moonLon(date){
+  const d=jd(date)-2451545;
+  const D=(297.850+12.190749*d)*rad,Ms=(357.529+0.98560028*d)*rad,Mm=(134.963+13.064993*d)*rad,F=(93.272+13.229350*d)*rad;
+  return norm(218.316+13.176396*d+6.289*S(Mm)+1.274*S(2*D-Mm)+0.658*S(2*D)+0.214*S(2*Mm)-0.186*S(Ms)-0.114*S(2*F)
+    +0.059*S(2*D-2*Mm)+0.057*S(2*D-Ms-Mm)+0.053*S(2*D+Mm)+0.046*S(2*D-Ms)+0.041*S(Mm-Ms)-0.035*S(D)-0.030*S(Mm+Ms));
+}
+function lonOfBuiltin(body,date){
+  if(body==='moon')return moonLon(date);
+  // pr: precession from the J2000 equinox of the elements to the equinox of the date (about 0.37° in 2026)
+  const T=(jd(date)-2451545)/36525,e=helio(EL.earth,T),pr=1.396971*T+0.0003086*T*T;
+  if(body==='sun')return norm(Math.atan2(-e[1],-e[0])/rad+pr);
+  const p=helio(EL[body],T);return norm(Math.atan2(p[1]-e[1],p[0]-e[0])/rad+pr);
+}
+function isRetro(body,date){
+  if(body==='sun'||body==='moon')return false;
+  const a=lonOf(body,new Date(date.getTime()-86400000)),b=lonOf(body,new Date(date.getTime()+86400000));
+  let d=b-a;if(d>180)d-=360;if(d<-180)d+=360;return d<0;
+}
+function sunTimesBuiltin(date,lat,lon){ // date = local noon
+  const n=Math.round(jd(date)-2451545+lon/360),Js=n-lon/360;
+  const M=norm(357.5291+0.98560028*Js)*rad,C=1.9148*S(M)+0.02*S(2*M)+0.0003*S(3*M);
+  const lam=norm(M/rad+C+180+102.9372)*rad,Jt=2451545+Js+0.0053*S(M)-0.0069*S(2*lam);
+  const dec=Math.asin(S(lam)*S(23.4397*rad));
+  const w0=Math.acos((S(-0.833*rad)-S(lat*rad)*S(dec))/(Math.cos(lat*rad)*Math.cos(dec)))/rad;
+  const toD=J=>new Date((J-2440587.5)*86400000);
+  return{rise:toD(Jt-w0/360),set:toD(Jt+w0/360)};
+}
+//ASTRO-END
+
+// Hebcal (Jewish calendar) and Astronomy Engine (planet positions), loaded above.
+// If either one fails to load, the built-in formulas above are used instead.
+const HC=window.hebcal||null,AE=window.Astronomy||null;
+const AEB={sun:'Sun',moon:'Moon',mercury:'Mercury',venus:'Venus',mars:'Mars',jupiter:'Jupiter',saturn:'Saturn'};
+// Times are shown, and days counted, in the selected city's time zone rather than the phone's.
+let TZ='Asia/Jerusalem';
+const DTF={},HMF={};
+function tzp(d,tz=TZ){ // wall-clock parts of instant d in zone tz (m is 1-12, w is 0 for Sunday)
+  const f=DTF[tz]||(DTF[tz]=new Intl.DateTimeFormat('en-US',{timeZone:tz,hourCycle:'h23',weekday:'short',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric'}));
+  const o={};for(const x of f.formatToParts(d))o[x.type]=x.value;
+  return{y:+o.year,m:+o.month,d:+o.day,h:+o.hour%24,mi:+o.minute,s:+o.second,w:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(o.weekday)};
+}
+function zt(y,m,d,h,mi,tz=TZ){ // the instant when a clock in zone tz shows y-m-d h:mi (m is 1-12; overflow rolls over)
+  const want=Date.UTC(y,m-1,d,h,mi);let t=want;
+  for(let i=0;i<3;i++){const q=tzp(new Date(t),tz);t=want-(Date.UTC(q.y,q.m-1,q.d,q.h,q.mi,q.s)-t);}
+  return new Date(t);
+}
+const zd=z=>new Date(z.epochMilliseconds);
+const noNikud=s=>String(s).replace(/[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/g,'');
+const heTxt=s=>noNikud(HC.Locale.gettext(s,'he-x-NoNikud'));
+function lonOf(body,date){ // tropical longitude of date, as the Rambam measures the mazalot
+  if(AE){try{
+    if(body==='sun')return AE.SunPosition(date).elon;
+    if(body==='moon')return AE.EclipticGeoMoon(date).lon;
+    return AE.Ecliptic(AE.GeoVector(AEB[body],date,true)).elon;
+  }catch(e){}}
+  return lonOfBuiltin(body,date);
+}
+function sunTimes(date,lat,lon,tz){
+  if(HC&&tz){try{
+    const z=new HC.Zmanim(new HC.GeoLocation('',lat,lon,0,tz),date,false),rise=z.sunrise(),set=z.sunset();
+    if(rise&&set&&!isNaN(rise)&&!isNaN(set))return{rise,set};
+  }catch(e){}}
+  return sunTimesBuiltin(date,lat,lon);
+}
+// first moment within `days` days after `from` when a body enters a new sign (to the half minute)
+function nextIngress(body,from,days){
+  const sg=t=>Math.floor(lonOf(body,new Date(t))/30),t0=from.getTime(),s0=sg(t0),step=6*3600000,end=t0+days*86400000;
+  for(let t=t0+step;t<=end;t+=step){
+    if(sg(t)===s0)continue;
+    let a=t-step,b=t;while(b-a>30000){const m=(a+b)/2;if(sg(m)===s0)a=m;else b=m;}
+    return{t:new Date(b),to:sg(b)};
+  }
+  return null;
+}
+function moonFrac(date,elong){
+  if(AE){try{return AE.Illumination('Moon',date).phase_fraction}catch(e){}}
+  return(1-Math.cos(elong*rad))/2;
+}
+function moonRiseSet(start,lat,lon){ // start = midnight in the city
+  if(!AE)return null;
+  try{const o=new AE.Observer(lat,lon,0);
+    const r=AE.SearchRiseSet('Moon',o,+1,start,1),s=AE.SearchRiseSet('Moon',o,-1,start,1);
+    return{rise:r?r.date:null,set:s?s.date:null};}catch(e){return null}
+}
+// molad and Kiddush Levana window of this Hebrew month, or of next month once this month's window has passed
+function moladOf(day,eve){ // eve = 18:00 in the city
+  if(!HC)return null;
+  try{
+    const hd=new HC.HDate(day),y=hd.getFullYear(),m=hd.getMonth(),d=hd.getDate();
+    const win=mo=>({show:mo,kl3:zd(mo.getTchilasZmanKidushLevana3Days()),kl7:zd(mo.getTchilasZmanKidushLevana7Days()),klEnd:zd(mo.getSofZmanKidushLevana15Days())});
+    const cur=win(new HC.Molad(y,m));
+    if(cur.klEnd>eve)return cur;
+    const nx=new HC.HDate(hd.abs()+HC.HDate.daysInMonth(m,y)-d+1);
+    return win(new HC.Molad(nx.getFullYear(),nx.getMonth()));
+  }catch(e){return null}
+}
+function moladText(mo){
+  const g=tzp(zd(mo.getInstant()),'Asia/Jerusalem');
+  return`מולד ${heTxt(mo.getMonthName())}: יום ${DOW[mo.getDow()].d} ${g.d}.${g.m}, בשעה ${mo.getHour()} ו־${mo.getMinutes()} דקות ו־${mo.getChalakim()} חלקים (לפי החשבון, בשעון ירושלים)`;
+}
+const KEEP_MODERN=['Yom HaShoah','Yom HaZikaron',"Yom HaAtzma'ut",'Yom Yerushalayim'];
+function eventsHebcal(day,dh,il){
+  const F=HC.flags,ev=[],w=day.getDay();let holy=w===6?'שבת קודש':null;
+  if(w===6)ev.push('שבת קודש');if(w===5)ev.push('ערב שבת');
+  for(const e of HC.HebrewCalendar.calendar({start:day,end:day,il,omer:true,shabbatMevarchim:true,locale:'he-x-NoNikud'})){
+    const f=e.getFlags();
+    if(f&F.MODERN_HOLIDAY&&!KEEP_MODERN.includes(e.getDesc()))continue;
+    let t=noNikud(e.render('he-x-NoNikud')).replace(/\s\d{4}$/,'');
+    if(f&F.OMER_COUNT&&e.omer)t=`ספירת העומר: ${e.omer} לעומר${e.omer<49?` (בערב: ${e.omer+1})`:''}`;
+    else if(f&F.CHANUKAH_CANDLES)t+=' (בערב)';
+    if(f&F.CHAG&&!(f&F.CHOL_HAMOED))holy=t;
+    ev.push(t);
+  }
+  if(dh.idx===5)ev.push('חודש אלול, ימי רחמים');
+  ev.holy=holy;return ev;
+}
+function parashaOf(day,il){
+  if(!HC)return null;
+  try{const hd=new HC.HDate(day),r=HC.getSedra(hd.getFullYear(),il).lookup(hd);
+    if(r.chag||!r.parsha)return null;
+    return(day.getDay()===6?'פרשת ':'פרשת השבוע: ')+r.parsha.map(heTxt).join('־');
+  }catch(e){return null}
+}
+function gemName(name){
+  const s=String(name||'').replace(/[^\u05D0-\u05EA]/g,'');
+  if(!HC||!s)return[];
+  try{const n=HC.gematriyaStrToNum(s);return n?[['השם שלך בגימטריה',`${n} (${gem(n)})`]]:[]}catch(e){return[]}
+}
+
+const ELEM={fire:'אש',earth:'עפר',air:'רוח',water:'מים'};
+const M=[
+ {n:'טלה',m:'ניסן',t:'יהודה',l:'ה',s:'דיבור',e:'fire',traits:['יוזמה','אומץ','מנהיגות'],care:'פזיזות',
+  f:['האנרגיה שלך היום חזקה במיוחד, וזה זמן טוב לפתוח דבר חדש שדחית.','מילה טובה שתאמר היום תפתח לך דלת שחשבת שנסגרה.','כדאי לעצור רגע לפני תגובה חריפה. הכוח שלך גדול יותר כשהוא מתון.','מישהו מחכה שתיקח אחריות ותוביל. אל תהסס.'],
+  a:['פתח את היום בברכות השחר בקול ובכוונה','אמור מילה טובה לשלושה אנשים','סיים משימה אחת שהתחלת השבוע','שמור על הלשון מדיבור שלילי']},
+ {n:'שור',m:'אייר',t:'יששכר',l:'ו',s:'מחשבה',e:'earth',traits:['יציבות','נאמנות','סבלנות'],care:'עקשנות',
+  f:['היום מתאים לבנייה איטית ובטוחה. כל צעד קטן נחשב.','רעיון שחשבת עליו זמן רב מבשיל. כתוב אותו.','עניינים כספיים דורשים סדר היום, לא החלטות חפוזות.','כדאי לשחרר דעה ישנה ולהקשיב לצד השני.'],
+  a:['קבע זמן ללימוד תורה, אפילו עשר דקות','כתוב שלושה דברים שאתה מודה עליהם','סדר פינה אחת בבית או בעבודה','התקשר להורים או לסבא וסבתא']},
+ {n:'תאומים',m:'סיוון',t:'זבולון',l:'ז',s:'הילוך',e:'air',traits:['סקרנות','תקשורת','קלילות'],care:'פיזור',
+  f:['שיחה מקרית היום עשויה להביא הזדמנות מפתיעה.','התנועה עושה לך טוב. צא, לך, תזוז.','כדאי לבחור דבר אחד ולהתמקד בו במקום לרדוף אחרי הכול.','חבר ותיק יחזור לתמונה וישמח אותך.'],
+  a:['לך לבקר חולה או חבר שלא ראית','צא להליכה של חצי שעה','למד הלכה אחת ושתף אותה עם מישהו','סגור טלפון לשעה ותתמקד']},
+ {n:'סרטן',m:'תמוז',t:'ראובן',l:'ח',s:'ראייה',e:'water',traits:['רגישות','אכפתיות','אינטואיציה'],care:'מצבי רוח',
+  f:['הבית והמשפחה במרכז היום. זמן משותף יחזק אותך.','התחושה הפנימית שלך מדויקת היום. סמוך עליה.','שים לב לראות את הטוב באנשים סביבך, גם בקטן.','רגש ישן עולה. זה זמן טוב לסלוח ולשחרר.'],
+  a:['הדלק נר וקרא פרק תהילים לעילוי נשמה','הכן ארוחה למישהו אחר','הסתכל על מישהו בעין טובה ואמור לו מה ראית','שתה מים והקפד על מנוחה']},
+ {n:'אריה',m:'אב',t:'שמעון',l:'ט',s:'שמיעה',e:'fire',traits:['נדיבות','ביטחון','חום'],care:'גאווה',
+  f:['אנשים מקשיבים לך היום. השתמש בזה לטובה.','הצלחה קטנה מחכה לך, והיא תבוא דרך עזרה לאחרים.','הקשב יותר ממה שאתה מדבר, ותגלה משהו חשוב.','ענווה קטנה היום תביא כבוד גדול מחר.'],
+  a:['תן צדקה לפני התפילה','הקשב עד הסוף לפני שאתה עונה','פרגן בפומבי למישהו','אמור קריאת שמע בכוונה מיוחדת']},
+ {n:'בתולה',m:'אלול',t:'גד',l:'י',s:'מעשה',e:'earth',traits:['דיוק','סדר','שירות'],care:'ביקורתיות',
+  f:['יום של עשייה מעשית. מה שתעשה בידיים יצליח.','הפרטים הקטנים חשובים היום. בדוק פעמיים.','היה רך עם עצמך. לא הכול צריך להיות מושלם.','מעשה חסד שקט ישפיע הרבה יותר ממה שנראה.'],
+  a:['עשה חסד בלי שאיש יידע','תקן דבר קטן שמתקלקל בבית','עשה חשבון נפש קצר בסוף היום','הקפד על נטילת ידיים וברכות']},
+ {n:'מאזניים',m:'תשרי',t:'אפרים',l:'ל',s:'תשמיש',e:'air',traits:['איזון','צדק','הרמוניה'],care:'התלבטות',
+  f:['היום מתאים ליישב מחלוקת ולעשות שלום.','החלטה שחיכתה תתבהר. אל תדחה אותה שוב.','זוגיות וקשרים קרובים מקבלים תשומת לב חיובית.','חפש את שביל הזהב בין עבודה למנוחה.'],
+  a:['עשה שלום בין שני אנשים או השלם עם מישהו','קבל החלטה אחת שדחית','הקדש זמן איכות לבן/בת הזוג או למשפחה','דון כל אדם לכף זכות']},
+ {n:'עקרב',m:'חשוון',t:'מנשה',l:'נ',s:'ריח',e:'water',traits:['עומק','נחישות','נאמנות'],care:'חשדנות',
+  f:['אתה מרגיש היום מה שאחרים מפספסים. השתמש בזה בחוכמה.','שינוי פנימי מתחיל. אל תפחד ממנו.','כדאי לסמוך קצת יותר. לא כל אחד מסתיר משהו.','סוד שתשמור היום יבנה אמון גדול.'],
+  a:['ברך ברכת הריח על בשמים או פרחים','שמור סוד שנמסר לך','כתוב מטרה אחת לחודש הקרוב','התפלל על מישהו אחר לפני שתתפלל על עצמך']},
+ {n:'קשת',m:'כסלו',t:'בנימין',l:'ס',s:'שינה',e:'fire',traits:['אופטימיות','חופש','אמונה'],care:'הבטחות יתר',
+  f:['אור קטן היום יגרש הרבה חושך. האמן בעצמך.','מנוחה טובה היא חלק מההצלחה. שן מוקדם.','תוכנית רחוקה מקבלת היום צעד ראשון ממשי.','הבטח פחות ועשה יותר.'],
+  a:['לך לישון בשעה סבירה ואמור קריאת שמע על המיטה','למד משהו חדש מתוך ספר','הדלק אור למישהו: עזור, עודד, חייך','קיים הבטחה אחת שנתת']},
+ {n:'גדי',m:'טבת',t:'דן',l:'ע',s:'רוגז',e:'earth',traits:['שאפתנות','אחריות','התמדה'],care:'כעס',
+  f:['העבודה הקשה שלך מתחילה להשתלם. המשך.','ייתכן שמשהו ירגיז אותך. עצור, נשום, וענה אחר כך.','אחריות חדשה מגיעה, ואתה מוכן לה.','כדאי להכניס קצת שמחה לתוך הרצינות.'],
+  a:['כשתכעס, ספור עד עשר לפני שתגיב','הקדש עשר דקות לתכנון השבוע','עשה מעשה שמחה אחד בכוונה','למד משנה אחת']},
+ {n:'דלי',m:'שבט',t:'אשר',l:'צ',s:'לעיטה',e:'air',traits:['מקוריות','חברות','חזון'],care:'ריחוק',
+  f:['רעיון מקורי שלך יכול לעזור להרבה אנשים.','השפע היום בא דרך שיתוף, לא דרך שמירה לעצמך.','שים לב למה שאתה אוכל ומברך עליו.','חבר צריך אותך. תהיה שם.'],
+  a:['ברך ברכה ראשונה ואחרונה בכוונה על מה שאתה אוכל','שתף אוכל או משקה עם מישהו','שלח הודעה לחבר שהתרחקת ממנו','נטע צמח או טפל בצמח']},
+ {n:'דגים',m:'אדר',t:'נפתלי',l:'ק',s:'שחוק',e:'water',traits:['שמחה','דמיון','חמלה'],care:'חלומות בלי מעשים',
+  f:['השמחה היא הכוח שלך היום. ״משנכנס אדר מרבין בשמחה״ נכון לך כל השנה.','חלום שחלמת יכול להפוך למציאות אם תעשה צעד אחד.','הצחוק שלך מרפא אנשים סביבך.','כדאי לשים גבולות ברורים כדי לא להתעייף.'],
+  a:['שמח מישהו שעצוב','קרא פרק תהילים מתוך שמחה','כתוב חלום אחד ומה הצעד הראשון אליו','שיר או נגן ניגון']}
+];
+const MOONTXT=[
+ 'הרגשות חמים ומהירים. יום של יוזמה ותגובות מהירות, ולכן כדאי לספור עד עשר לפני שעונים.',
+ 'אווירה רגועה ויציבה. טוב ליהנות מדברים מוחשיים, מאוכל טוב ומשקט.',
+ 'הרבה שיחות, הודעות ותנועה. הראש קופץ בין נושאים, ולכן כדאי לרשום מה חשוב.',
+ 'הלבנה בביתה במזל סרטן. רגישות גבוהה ומשיכה חזקה לבית ולמשפחה.',
+ 'רצון להיראות ולהישמע. הלב רחב, וזה יום טוב לנדיבות ולפרגון.',
+ 'יום של סדר ופרטים. מתאים לטפל בבריאות, בניקיון ובמשימות קטנות שהצטברו.',
+ 'רצון בהרמוניה ובחברה. יום טוב לפגישות, לפשרות ולעשיית שלום.',
+ 'רגשות עמוקים וחזקים. האינטואיציה חדה, וכדאי להיזהר מקנאה ומחשדנות.',
+ 'אופטימיות ורצון במרחב. טוב ללימוד, לנסיעות ולתוכניות גדולות.',
+ 'רצינות ואחריות. יום טוב לעבודה, לתכנון ולהחלטות מעשיות.',
+ 'רעיונות חדשים וחברים. הלב קצת מרוחק, והראש פתוח לחידושים.',
+ 'חלומות, חמלה ותפילה. הגבולות מטושטשים, וזה זמן טוב להתבודדות ולתהילים.'
+];
+// planets in the order שצ״ם חנכ״ל
+const P={
+ 'שבתאי':{b:'saturn',dom:'סבלנות ומשמעת',good:'מה שתבנה בסבלנות היום יחזיק לאורך זמן.',hard:'עיכובים ומכשולים קטנים אפשריים. אל תתייאש ואל תמהר.',hour:'טוב לסיים ולסגור, פחות להתחיל דברים חדשים',rule:'יום של מנוחה, קדושה והתבוננות. מה שנבנה לאט מחזיק.',gem:'מחשבותיו מתבטלות'},
+ 'צדק':{b:'jupiter',dom:'שפע וצדקה',good:'שפע וברכה פתוחים אליך. צדקה היום פותחת שערים.',hard:'היזהר מהגזמה ומהבטחות גדולות מדי.',hour:'צדקה, בקשות, ברכות וענייני משפט',rule:'יום של חסד ושפע. טוב לתת, לבקש ולברך.',gem:'עושה צדקות'},
+ 'מאדים':{b:'mars',dom:'כוח ועשייה',good:'אנרגיה ואומץ לפעול. זמן טוב למאמץ פיזי ולהחלטות נחושות.',hard:'קל להתרגז היום. הימנע מעימותים ומחיפזון.',hour:'ספורט ועבודה פיזית. להיזהר ממריבות',rule:'יום של כוח ומאבק. כוון את האנרגיה לעשייה ולא לוויכוחים.',gem:'שופך דם: רופא, מוהל או שוחט'},
+ 'חמה':{b:'sun',dom:'אור ונראות',good:'אתה בולט ונראה. דברים שתעשה בגלוי יצליחו.',hard:'אל תתאמץ להוכיח את עצמך. ענווה תעבוד טוב יותר.',hour:'פגישות, הופעה בציבור ודברים שנעשים בגלוי',rule:'יום של אור והתחלה. מתאים לפתוח דברים בגלוי.',gem:'פניו מאירות, אוכל משלו ואין לו סודות'},
+ 'נוגה':{b:'venus',dom:'אהבה ופרנסה',good:'חן ונעימות ביחסים, והצלחה בענייני כסף.',hard:'פיתוי להוציא יותר מדי. שמור על הכיס ועל הלב.',hour:'פרנסה, קניות, זוגיות ויופי',rule:'יום של חן ושפע. טוב לזוגיות, לפרנסה ולהכנות לשבת.',gem:'עשיר ובעל תשוקה'},
+ 'כוכב':{b:'mercury',dom:'חכמה ודיבור',good:'הדיבור והכתיבה מצליחים. טוב לשיחות, לחוזים וללימוד.',hard:'אי־הבנות אפשריות. נסח בבהירות ובדוק פרטים.',hour:'לימוד, כתיבה, חוזים ושיחות חשובות',rule:'יום של חכמה ובהירות. מתאים ללימוד ולהחלטות שכליות.',gem:'בעל אור וחכמה'},
+ 'לבנה':{b:'moon',dom:'רגש ובית',good:'רגשות נעימים וקרבה למשפחה.',hard:'מצב רוח משתנה. תן לעצמך זמן לפני תגובה.',hour:'בית, משפחה, רגש ומנוחה',rule:'יום של רגש ושינויים. טוב לבית ולמשפחה.',gem:'בונה והורס, הורס ובונה'}
+};
+const SEQ=['שבתאי','צדק','מאדים','חמה','נוגה','כוכב','לבנה'];
+const DOW=[
+ {d:'ראשון',p:'חמה',x:'אדם שלם בתכונותיו, או לטוב או למוטב (״גבר ולא חד ביה״)'},
+ {d:'שני',p:'לבנה',x:'בעל רגש עז, שצריך ללמוד לרסן את הכעס'},
+ {d:'שלישי',p:'מאדים',x:'בעל כוח ושפע, שצריך לכוון אותו לטוב'},
+ {d:'רביעי',p:'כוכב',x:'חכם ובעל אור פנימי (״נהור וחכים״)'},
+ {d:'חמישי',p:'צדק',x:'גומל חסדים'},
+ {d:'שישי',p:'נוגה',x:'רודף מצוות (״חזרן״)'},
+ {d:'שבת',p:'שבתאי',x:'בעל קדושה גדולה (״קדישא רבה״)'}
+];
+const AREAS=[
+ {n:'אהבה וזוגיות',pl:['נוגה','לבנה'],t:[
+   ['הלב פתוח ואנשים קרובים אליך. אמור את מה שאתה מרגיש, ותקבל יחס חם בחזרה.','חן מיוחד עליך היום. לפנויים: זמן טוב להיפגש ולהכיר. לזוגות: ערב משותף יחזק את הקשר.'],
+   ['יום שקט ביחסים. מחווה קטנה, הודעה חמה או מילת תודה, תעשה הרבה.','אין דרמות היום. זמן טוב לשיחה רגועה על תוכניות משותפות.'],
+   ['רגישות גבוהה סביבך. הקשב לפני שאתה מגיב, והימנע מוויכוחים על דברים קטנים.','מצבי רוח משתנים אצלך ואצל בן/בת הזוג. אל תקבל היום החלטות גדולות ביחסים.']]},
+ {n:'קריירה ופרנסה',pl:['צדק','נוגה','חמה'],t:[
+   ['השפע זורם אליך היום. זמן טוב לבקש, להציע ולסגור עסקאות.','אנשים בעמדות השפעה רואים אותך היום. הצג את העבודה שלך בביטחון.'],
+   ['יום רגיל בעבודה ובכסף. התמד במה שעובד, בלי הימורים.','התקדמות איטית אבל בטוחה. סיים משימות פתוחות לפני שאתה לוקח חדשות.'],
+   ['כדאי לדחות הוצאות גדולות והחלטות כספיות. בדוק כל מספר פעמיים.','ייתכנו עיכובים או אי־הבנות בעבודה. שמור על סבלנות ותעד הכול בכתב.']]},
+ {n:'בריאות וכוח',pl:['מאדים','חמה'],t:[
+   ['כוח פיזי טוב היום. נצל אותו לתנועה ולעבודה שדורשת מאמץ.','אנרגיה גבוהה. הליכה, ספורט או עבודה בבית יעשו לך טוב.'],
+   ['שמור על שגרה: שינה, מים ואוכל מסודר.','יום מאוזן לגוף. אל תדלג על ארוחות ועל מנוחה.'],
+   ['הגוף מבקש מנוחה. אל תעמיס, והיזהר מחיפזון.','עייפות אפשרית. לך לישון מוקדם והפחת ממתח.']]},
+ {n:'לימוד ורוחניות',pl:['כוכב','צדק','שבתאי'],t:[
+   ['הראש צלול ופתוח. זמן מצוין ללימוד תורה, כתיבה וחשיבה.','תפילה היום יוצאת מהלב. זמן טוב לבקש על דברים שחשובים לך.'],
+   ['קבע זמן קבוע ללימוד, גם אם קצר.','חזור על משהו שכבר למדת. החזרה תפתח לך הבנה חדשה.'],
+   ['קשה להתרכז היום. קרא לאט, חזור על מה שלמדת, והתפלל בכוונה.','הראש מוטרד. כמה פרקי תהילים יעזרו להירגע ולהתמקד.']]}
+];
+const AVOID={'שבתאי':'להתחיל פרויקט חדש בלחץ זמן','צדק':'להבטיח הבטחות גדולות מדי','מאדים':'ויכוחים, ונהיגה כשאתה עצבני','חמה':'להתווכח עם ממונים או להתנשא','נוגה':'קניות מיותרות והוצאות של רגע','כוכב':'לחתום או לשלוח בלי לקרוא שוב','לבנה':'לקבל החלטות מתוך מצב רוח'};
+const STONE={'יהודה':'נופך','יששכר':'ספיר','זבולון':'יהלום','ראובן':'אודם','שמעון':'פטדה','גד':'אחלמה','אפרים':'שהם','מנשה':'שהם','בנימין':'ישפה','דן':'לשם','אשר':'תרשיש','נפתלי':'שבו'};
+const SENSE={'דיבור':'לדבר דברים שמוציאים לחירות, כמו בליל הסדר (״פה סח״)','מחשבה':'לזכך את המחשבות ולעבוד על המידות, כמו בספירת העומר','הילוך':'ללכת בדרך הנכונה ולהתקדם צעד אחר צעד','ראייה':'לראות טוב, גם בתוך הקושי','שמיעה':'להקשיב באמת, ולשמוע את הנחמה','מעשה':'לעשות תשובה במעשים ממשיים','תשמיש':'לקדש את הקשר ואת הגוף, באיזון ובמידה','ריח':'לחוש מה טוב ומה לא, ולהריח את הטוב שבדברים הנסתרים','שינה':'לנוח במנוחה של אמונה, ולהעיר את האור שבפנים','רוגז':'להפוך את הכעס לכוח של עשייה','לעיטה':'לאכול בקדושה, בברכה ובהכרת טובה','שחוק':'לשמוח בשמחה של מצווה'};
+const SHIR=[24,48,82,94,81,93,92];
+//DAF-START
+// Daf Yomi: one daf of the Babylonian Talmud a day. Same calculation as Hebcal and KosherJava,
+// counting 2711-day cycles from 24 June 1975 (when Shekalim became 22 dafim).
+const SHAS=[['ברכות',64,'Berakhot'],['שבת',157,'Shabbat'],['עירובין',105,'Eruvin'],['פסחים',121,'Pesachim'],['שקלים',22],['יומא',88,'Yoma'],['סוכה',56,'Sukkah'],['ביצה',40,'Beitzah'],['ראש השנה',35,'Rosh_Hashanah'],['תענית',31,'Taanit'],['מגילה',32,'Megillah'],['מועד קטן',29,'Moed_Katan'],['חגיגה',27,'Chagigah'],['יבמות',122,'Yevamot'],['כתובות',112,'Ketubot'],['נדרים',91,'Nedarim'],['נזיר',66,'Nazir'],['סוטה',49,'Sotah'],['גיטין',90,'Gittin'],['קידושין',82,'Kiddushin'],['בבא קמא',119,'Bava_Kamma'],['בבא מציעא',119,'Bava_Metzia'],['בבא בתרא',176,'Bava_Batra'],['סנהדרין',113,'Sanhedrin'],['מכות',24,'Makkot'],['שבועות',49,'Shevuot'],['עבודה זרה',76,'Avodah_Zarah'],['הוריות',14,'Horayot'],['זבחים',120,'Zevachim'],['מנחות',110,'Menachot'],['חולין',142,'Chullin'],['בכורות',61,'Bekhorot'],['ערכין',34,'Arakhin'],['תמורה',34,'Temurah'],['כריתות',28,'Keritot'],['מעילה',22,'Meilah'],['קינים',4],['תמיד',9,'Tamid'],['מידות',5],['נדה',73,'Niddah']];
+function dafYomi(date){
+  const dn=Math.round((Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())-Date.UTC(1975,5,24))/86400000);
+  if(dn<0)return null;
+  const cycle=8+Math.floor(dn/2711),k=dn%2711;
+  let total=0;
+  for(let j=0;j<SHAS.length;j++){
+    total+=SHAS[j][1]-1;
+    if(k<total){ // Kinnim, Tamid and Middot continue the page numbers of Meilah
+      const daf=SHAS[j][1]+1-(total-k)+(j===36?21:j===37?24:j===38?32:0);
+      return{cycle,tractate:SHAS[j][0],sefaria:SHAS[j][2],daf,left:total-k-1,end:new Date(date.getTime()+(2710-k)*86400000)};
+    }
+  }
+  return null;
+}
+//DAF-END
+//LEARN-START
+// Mishna Yomi (two mishnayot a day since 20 May 1947) and Daily Rambam (since 29 April 1984),
+// on the same schedules as Hebcal's learning package. In MISHNA each base-36 digit is one chapter's number of mishnayot.
+const MISHNA=[["ברכות","Berakhot","586758585"],["פאה","Peah","688b8b89"],["דמאי","Demai","4567bc8"],["כלאים","Kilayim","9b798986a"],["שביעית","Sheviit","8aaa967b99"],["תרומות","Terumot","a69d967c7ca"],["מעשרות","Maasrot","88a68"],["מעשר שני","Maaser Sheni","7adcf"],["חלה","Challah","98ab"],["ערלה","Orlah","9h9"],["ביכורים","Bikkurim","bbc5"],["שבת","Shabbat","b7624a477666743883653655"],["עירובין","Eruvin","a69b9abb4f"],["פסחים","Pesachim","7889a6d8b9"],["שקלים","Shekalim","75496678"],["יומא","Yoma","87b67859"],["סוכה","Sukkah","b9fa8"],["ביצה","Beitzah","aa877"],["ראש השנה","Rosh Hashanah","9989"],["תענית","Taanit","7a98"],["מגילה","Megillah","b66a"],["מועד קטן","Moed Katan","a59"],["חגיגה","Chagigah","878"],["יבמות","Yevamot","4aad66666976d9a7"],["כתובות","Ketubot","aa9c97a89664b"],["נדרים","Nedarim","45b86a97a8c"],["נזיר","Nazir","7a777b425"],["סוטה","Sotah","96855487f"],["גיטין","Gittin","6789979aa"],["קידושין","Kiddushin","aade"],["בבא קמא","Bava Kamma","46b97677ca"],["בבא מציעא","Bava Metzia","8bccb8b9d6"],["בבא בתרא","Bava Batra","6e89b848a8"],["סנהדרין","Sanhedrin","658556b7666"],["מכות","Makkot","a8g"],["שבועות","Shevuot","75bd5786"],["עדיות","Eduyot","eacc7397"],["עבודה זרה","Avodah Zarah","97acc"],["אבות","Avot","igimnb"],["הוריות","Horayot","578"],["זבחים","Zevachim","4566876c78868a"],["מנחות","Menachot","457597679995b"],["חולין","Chullin","7a7757668425"],["בכורות","Bekhorot","794a6c7a8"],["ערכין","Arakhin","465465578"],["תמורה","Temurah","6354656"],["כריתות","Keritot","76a389"],["מעילה","Meilah","498656"],["תמיד","Tamid","4593634"],["מדות","Middot","96874"],["קינים","Kinnim","456"],["כלים","Kelim","9884b46b88988868h9a73a5h99ca84"],["אהלות","Oholot","87737766g79867a55a"],["נגעים","Negaim","658b585a3ac7cd"],["פרה","Parah","45b495cb969b"],["טהרות","Tahorot","988d9a9998"],["מקוואות","Mikvaot","8a456b7578"],["נדה","Niddah","77779e54b8"],["מכשירין","Makhshirin","6b8ab8"],["זבים","Zavim","6437c"],["טבול יום","Tevul Yom","5867"],["ידים","Yadayim","5458"],["עוקצים","Oktzin","6ac"]];
+const RMB=[["מסירת תורה שבעל פה","Transmission of the Oral Law",3],["מצוות עשה","Positive Mitzvot",3],["מצוות לא תעשה","Negative Mitzvot",3],["תוכן החיבור","Overview of Mishneh Torah Contents",3],["הלכות יסודי התורה","Foundations of the Torah",10],["הלכות דעות","Human Dispositions",7],["הלכות תלמוד תורה","Torah Study",7],["הלכות עבודה זרה וחוקות הגויים","Foreign Worship and Customs of the Nations",12],["הלכות תשובה","Repentance",10],["הלכות קריאת שמע","Reading the Shema",4],["הלכות תפילה וברכת כהנים","Prayer and the Priestly Blessing",15],["הלכות תפילין ומזוזה וספר תורה","Tefillin, Mezuzah and the Torah Scroll",10],["הלכות ציצית","Fringes",3],["הלכות ברכות","Blessings",11],["הלכות מילה","Circumcision",3],["סדר התפילה","The Order of Prayer",4],["הלכות שבת","Sabbath",30],["עירובין","Eruvin",8],["הלכות שביתת עשור","Rest on the Tenth of Tishrei",3],["הלכות שביתת יום טוב","Rest on a Holiday",8],["הלכות חמץ ומצה","Leavened and Unleavened Bread",9],["הלכות שופר וסוכה ולולב","Shofar, Sukkah and Lulav",8],["הלכות שקלים","Sheqel Dues",4],["הלכות קידוש החודש","Sanctification of the New Month",19],["הלכות תעניות","Fasts",5],["הלכות מגילה וחנוכה","Scroll of Esther and Hanukkah",4],["הלכות אישות","Marriage",25],["הלכות גירושין","Divorce",13],["הלכות יבום וחליצה","Levirate Marriage and Release",8],["הלכות נערה בתולה","Virgin Maiden",3],["הלכות סוטה","Woman Suspected of Infidelity",4],["הלכות איסורי ביאה","Forbidden Intercourse",22],["הלכות מאכלות אסורות","Forbidden Foods",17],["הלכות שחיטה","Ritual Slaughter",14],["הלכות שבועות","Oaths",12],["הלכות נדרים","Vows",13],["הלכות נזירות","Nazariteship",10],["הלכות ערכים וחרמין","Appraisals and Devoted Property",8],["הלכות כלאים","Diverse Species",10],["הלכות מתנות עניים","Gifts to the Poor",10],["הלכות תרומות","Heave Offerings",15],["הלכות מעשרות","Tithes",14],["הלכות מעשר שני ונטע רבעי","Second Tithes and Fourth Year's Fruit",11],["הלכות ביכורים ושאר מתנות כהונה שבגבולין","First Fruits and other Gifts to Priests Outside the Sanctuary",12],["הלכות שמיטה ויובל","Sabbatical Year and the Jubilee",13],["הלכות בית הבחירה","The Chosen Temple",8],["הלכות כלי המקדש והעובדין בו","Vessels of the Sanctuary and Those who Serve Therein",10],["הלכות ביאת מקדש","Admission into the Sanctuary",9],["הלכות איסורי המזבח","Things Forbidden on the Altar",7],["הלכות מעשה הקרבנות","Sacrificial Procedure",19],["הלכות תמידים ומוספין","Daily Offerings and Additional Offerings",10],["הלכות פסולי המוקדשין","Sacrifices Rendered Unfit",19],["הלכות עבודת יום הכפורים","Service on the Day of Atonement",5],["הלכות מעילה","Trespass",8],["הלכות קרבן פסח","Paschal Offering",10],["הלכות חגיגה","Festival Offering",3],["הלכות בכורות","Firstlings",8],["הלכות שגגות","Offerings for Unintentional Transgressions",15],["הלכות מחוסרי כפרה","Offerings for Those with Incomplete Atonement",5],["הלכות תמורה","Substitution",4],["הלכות טומאת מת","Defilement by a Corpse",25],["הלכות פרה אדומה","Red Heifer",15],["הלכות טומאת צרעת","Defilement by Leprosy",16],["הלכות מטמאי משכב ומושב","Those Who Defile Bed or Seat",13],["הלכות שאר אבות הטומאות","Other Sources of Defilement",20],["הלכות טומאת אוכלים","Defilement of Foods",16],["הלכות כלים","Vessels",28],["הלכות מקואות","Immersion Pools",11],["הלכות נזקי ממון","Damages to Property",14],["הלכות גניבה","Theft",9],["הלכות גזילה ואבידה","Robbery and Lost Property",18],["הלכות חובל ומזיק","One Who Injures a Person or Property",8],["הלכות רוצח ושמירת נפש","Murderer and the Preservation of Life",13],["הלכות מכירה","Sales",30],["הלכות זכייה ומתנה","Ownerless Property and Gifts",12],["הלכות שכנים","Neighbors",14],["הלכות שלוחין ושותפין","Agents and Partners",10],["הלכות עבדים","Slaves",9],["הלכות שכירות","Hiring",13],["הלכות שאלה ופיקדון","Borrowing and Deposit",8],["הלכות מלווה ולווה","Creditor and Debtor",27],["הלכות טוען ונטען","Plaintiff and Defendant",16],["הלכות נחלות","Inheritances",11],["הלכות סנהדרין והעונשין המסורין להם","The Sanhedrin and the Penalties within their Jurisdiction",26],["הלכות עדות","Testimony",22],["הלכות ממרים","Rebels",7],["הלכות אבל","Mourning",14],["הלכות מלכים ומלחמות","Kings and Wars",12]];
+const dayNo=(date,y,m,d)=>Math.round((Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())-Date.UTC(y,m,d))/86400000);
+const fd=d=>`${d.getDate()}.${d.getMonth()+1}.${d.getFullYear()}`;
+let MFLAT=null;
+function mishnaYomi(date){
+  const n=dayNo(date,1947,4,20);if(n<0)return null;
+  if(!MFLAT){MFLAT=[];MISHNA.forEach((t,i)=>[...t[2]].forEach((x,c)=>{for(let m=1;m<=parseInt(x,36);m++)MFLAT.push([i,c+1,m])}));}
+  const len=MFLAT.length/2,k=(n%len)*2;
+  return{list:[MFLAT[k],MFLAT[k+1]].map(([i,c,m])=>({i,c,m})),end:new Date(date.getTime()+(len-1-n%len)*86400000)};
+}
+const R_INTRO=[['1-21','22-33','34-45'],['1-83','84-166','167-248'],['1-122','123-245','246-365'],['1:1-4:8','5:1-9:9','10:1-14:10']];
+function rambamChap(idx,adj){
+  for(let j=0;j<RMB.length;j++){const ch=adj[j]||RMB[j][2];if(idx<ch)return{j,perek:j<4?R_INTRO[j][idx]:idx+1};idx-=ch;}
+}
+function rambamYomi(date){
+  const n=dayNo(date,1984,3,29);if(n<0)return null;
+  // the 1-chapter track joins Order of Prayer 4-5; the 3-chapter track gives Order of Prayer an extra day and joins Chametz 8-9
+  const one=rambamChap(n%1017,{});if(one.j===15&&one.perek===4)one.perek='4-5';
+  const d3=n%339,three=[0,1,2].map(i=>rambamChap(d3*3+i,{15:5,20:8}));
+  if(three[0].j===20&&three[0].perek===8)three[0].perek='8-9';
+  return{one,three,end:new Date(date.getTime()+(338-d3)*86400000)};
+}
+function mishnaTxt([a,b]){
+  const n=x=>MISHNA[x.i][0];
+  if(a.i!==b.i)return`מסכת ${n(a)} פרק ${gem(a.c)} משנה ${gem(a.m)}, ומסכת ${n(b)} פרק ${gem(b.c)} משנה ${gem(b.m)}`;
+  if(a.c!==b.c)return`מסכת ${n(a)} פרק ${gem(a.c)} משנה ${gem(a.m)}, ופרק ${gem(b.c)} משנה ${gem(b.m)}`;
+  return`מסכת ${n(a)} פרק ${gem(a.c)}, משניות ${gem(a.m)}–${gem(b.m)}`;
+}
+function mishnaUrl([a,b]){
+  const en=MISHNA[a.i][1],pre=(en==='Avot'?'Pirkei_':'Mishnah_')+en.replace(/ /g,'_');
+  const tail=a.i!==b.i?'':a.c===b.c?`-${b.m}`:`-${b.c}.${b.m}`;
+  return`https://www.sefaria.org.il/${pre}.${a.c}.${a.m}${tail}?lang=he`;
+}
+function rambamTxt(list){ // chapters from the same section are merged, as in Hebcal
+  const g=[];for(const r of list){const last=g[g.length-1];if(last&&last.j===r.j)last.to=r.perek;else g.push({j:r.j,from:r.perek,to:null});}
+  return g.map(x=>{
+    const nm=RMB[x.j][0],f=String(x.from).split('-'),a=f[0],b=x.to!=null?String(x.to).split('-').pop():f[1];
+    if(x.j<4)return`${nm} ${a}–${b}`;
+    return b?`${nm} פרקים ${gem(+a)}–${gem(+b)}`:`${nm} פרק ${gem(+a)}`;
+  }).join('; ');
+}
+function rambamUrl(r){
+  const ref=('Mishneh Torah, '+RMB[r.j][1]+'.'+r.perek).replace(/ /g,'_').replace(/:/g,'.');
+  return`https://www.sefaria.org.il/${encodeURIComponent(ref)}?lang=he`;
+}
+//LEARN-END
+const CREATION=[
+ 'ביום ראשון נברא האור (״ויהי אור״). יום של התחלות ובהירות.',
+ 'ביום שני נברא הרקיע והופרדו המים, ולא נאמר בו ״כי טוב״. לכן יש שנהגו שלא להתחיל בו דברים חדשים.',
+ 'ביום שלישי נאמר ״כי טוב״ פעמיים, ולכן נהגו לקבוע בו חתונות והתחלות חשובות.',
+ 'ביום רביעי נתלו המאורות: החמה, הלבנה והכוכבים. הגמרא (פסחים קי״ב) מזהירה שלא לצאת יחידי בליל רביעי.',
+ 'ביום חמישי נבראו הדגים והעופות ונתברכו ב״פרו ורבו״. יום של ברכה, ומשה עלה בו להר סיני.',
+ 'ביום שישי נברא האדם. יום של הכנה לשבת ושל תיקון.',
+ 'בשבת ״ויברך אלוקים את יום השביעי״. ממנה מתברכים כל ימי השבוע.'
+];
+const ACTS=[
+ {n:'להתחיל דבר חדש או לפתוח עסק',pl:['חמה','צדק'],begin:1},
+ {n:'לחתום על חוזה או מסמך',pl:['כוכב','צדק'],begin:1,ret:'כוכב'},
+ {n:'ראיון עבודה או בקשת העלאה',pl:['חמה','צדק']},
+ {n:'פגישה זוגית או שידוך',pl:['נוגה','לבנה'],begin:1,ret:'נוגה'},
+ {n:'קנייה גדולה או השקעה',pl:['נוגה','צדק'],begin:1,ret:'נוגה'},
+ {n:'לימוד, כתיבה ומבחנים',pl:['כוכב'],holy:1},
+ {n:'נסיעה או טיול',pl:['לבנה','כוכב']},
+ {n:'ספורט ומאמץ גופני',pl:['מאדים']},
+ {n:'תפילה, צדקה ובקשות',pl:['צדק'],holy:1},
+ {n:'לסיים ולסגור עניינים פתוחים',pl:['שבתאי'],end:1}
+];
+const HOLY=['שבת קודש','ראש השנה','יום כיפור','סוכות','שמיני עצרת ושמחת תורה','פסח','שביעי של פסח','שבועות'];
+const DSHORT=['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳'];
+function stars(p){const n=Math.max(1,Math.min(5,Math.round(p/20)));return`<span class="stars" aria-label="${n} מתוך 5">${'★'.repeat(n)}<i>${'★'.repeat(5-n)}</i></span>`;}
+// A planet's score for the viewer's mazal. Within BLEND degrees of a sign boundary the score passes
+// gradually to the neighbouring sign, so it no longer jumps when a planet crosses the line.
+const BLEND=3,smooth=t=>t*t*(3-2*t);
+function softScore(lon,ui){
+  const sign=Math.floor(lon/30),f=lon-sign*30,s=rel(sign,ui).s;
+  if(f<BLEND){const w=(1-smooth(f/BLEND))/2;return(1-w)*s+w*rel((sign+11)%12,ui).s;}
+  if(f>30-BLEND){const w=(1-smooth((30-f)/BLEND))/2;return(1-w)*s+w*rel((sign+1)%12,ui).s;}
+  return s;
+}
+// Each planet's house, height and lowliness: ברייתא דמזלות ט; ברייתא דשמואל הקטן (אוצר מדרשים)
+const DIGN={'שבתאי':{h:[9,10],up:6,low:0},'צדק':{h:[8,11],up:3,low:9},'מאדים':{h:[0,7],up:9,low:3},'חמה':{h:[4],up:0,low:6},'נוגה':{h:[1,6],up:11,low:5},'כוכב':{h:[2,5],up:5,low:11},'לבנה':{h:[3],up:1,low:7}};
+const FEM=n=>n==='לבנה'||n==='חמה';
+function dignity(name,sign){
+  const D=DIGN[name],f=FEM(name),home=D.h.includes(sign),up=D.up===sign;
+  if(home&&up)return{t:f?'בביתה ובגובהה':'בביתו ובגובהו',c:'g'};
+  if(home)return{t:f?'בביתה':'בביתו',c:'g'};
+  if(up)return{t:f?'בגובהה':'בגובהו',c:'g'};
+  if(D.low===sign)return{t:f?'בשפלותה':'בשפלותו',c:'w'};
+  return null;
+}
+function skyOf(t,ui){ // t = the instant (noon in the city)
+  const sky=SEQ.map(name=>{const lon=lonOf(P[name].b,t),sign=Math.floor(lon/30),re=rel(sign,ui),ret=isRetro(P[name].b,t),soft=softScore(lon,ui);
+    return{name,lon,sign,deg:Math.floor(lon%30),re,ret,soft,score:soft-(ret&&name!=='לבנה'&&name!=='חמה'?0.5:0),dg:dignity(name,sign)};});
+  return{sky,by:Object.fromEntries(sky.map(p=>[p.name,p]))};
+}
+const clampScore=v=>Math.max(20,Math.min(97,Math.round(v)));
+const lvlOf=s=>s>=78?{n:'גבוהה',c:'lv3'}:s>=58?{n:'טובה',c:'lv2'}:s>=40?{n:'מאוזנת',c:'lv1'}:{n:'שקטה',c:'lv0'};
+const K=22/8; // score points per unit of a planet's score: the Moon counts twice next to six planets, 22 points per unit
+// The day's energy (20-97) and what it is made of. The planets are taken at noon; the Moon, which moves
+// about half a degree an hour, is taken every hour from 06:00 to 23:00 in the city, and the day's score is the average.
+function dayModel(day,ui,bh,ev,S0){
+  const y=day.getFullYear(),m=day.getMonth()+1,d=day.getDate(),ruler=DOW[day.getDay()].p;
+  const s=S0||skyOf(zt(y,m,d,12,0),ui),fixed=[];
+  s.sky.forEach(p=>{if(p.name!=='לבנה')fixed.push({t:`${p.name} ${p.re.t}${p.ret&&p.name!=='חמה'?', בנסיגה':''}`,v:p.score*K});});
+  if(day.getDay()===6||ev.length)fixed.push({t:ev.holy||(day.getDay()===6?'שבת קודש':ev[0]),v:0.2*22});
+  if(heb(day).day===bh.day)fixed.push({t:`${gem(bh.day)} בחודש, כמו יום הלידה שלך`,v:0.4*22});
+  const rb=v=>0.3*22*Math.max(0,Math.min(1,v)),fsum=fixed.reduce((a,f)=>a+f.v,0),hours=[];
+  for(let h=6;h<=23;h++){const t=zt(y,m,d,h,0),ml=lonOf('moon',t),ms=softScore(ml,ui),rv=ruler==='לבנה'?ms:s.by[ruler].soft;
+    hours.push({h,t,ms,sign:Math.floor(ml/30),score:clampScore(58+fsum+ms*2*K+rb(rv))});}
+  const avg=f=>hours.reduce((a,x)=>a+f(x),0)/hours.length,a=hours[0].sign,z=hours[hours.length-1].sign;
+  const moonT=a===z?`הלבנה במזל ${M[a].n}, ${rel(a,ui).t}`:`הלבנה עוברת היום מ${M[a].n} ל${M[z].n}`;
+  const parts=[{t:moonT+' (משקל כפול)',v:avg(x=>x.ms*2*K)},{t:`${ruler} שולט ביום ${DOW[day.getDay()].d}`,v:avg(x=>rb(ruler==='לבנה'?x.ms:s.by[ruler].soft))},...fixed];
+  return{...s,hours,parts,score:clampScore(58+parts.reduce((a2,p)=>a2+p.v,0))};
+}
+// The planetary hour of birth (״מזל שעה״, רבי חנינא, שבת קנ״ו ע״א) and whether the birth was after sunset.
+// The birth time is read in the birth city's time zone, so past summer-time rules come from Intl.
+function birthHour(p){
+  if(!p||!p.time||!p.date)return null;
+  const c=CITIES[p.bcity??p.city],[y,m,d]=p.date.split('-').map(Number),[h,mi]=p.time.split(':').map(Number);
+  if(!c||!y||!m||!d||isNaN(h)||isNaN(mi))return null;
+  try{
+    const t=zt(y,m,d,h,mi,c[3]),day=new Date(y,m-1,d,12),st=sunTimes(day,c[1],c[2],c[3]),first=x=>SEQ.indexOf(DOW[x.getDay()].p);
+    let pl,after=false;
+    if(t>=st.rise&&t<st.set)pl=SEQ[(first(day)+Math.floor((t-st.rise)/((st.set-st.rise)/12)))%7];
+    else if(t>=st.set){const nx=sunTimes(new Date(y,m-1,d+1,12),c[1],c[2],c[3]);pl=SEQ[(first(day)+12+Math.floor((t-st.set)/((nx.rise-st.set)/12)))%7];after=true;}
+    else{const pv=new Date(y,m-1,d-1,12),ps=sunTimes(pv,c[1],c[2],c[3]);pl=SEQ[(first(pv)+12+Math.floor((t-ps.set)/((st.rise-ps.set)/12)))%7];}
+    return{t,pl,after,set:st.set,city:c};
+  }catch(e){return null}
+}
+function hoursOf(day,city){
+  const st=sunTimes(day,city[1],city[2],city[3]),nx=sunTimes(new Date(day.getTime()+86400000),city[1],city[2],city[3]);
+  const dl=(st.set-st.rise)/12,nl=(nx.rise-st.set)/12,start=SEQ.indexOf(DOW[day.getDay()].p);
+  const mk=(t0,len,off)=>Array.from({length:12},(_,h)=>{const s=new Date(t0.getTime()+h*len);return{s,e:new Date(s.getTime()+len),pl:SEQ[(start+off+h)%7]}});
+  return{st,dl,day:mk(st.rise,dl,0),night:mk(st.set,nl,12)};
+}
+// 301 cities: Hebrew name | latitude | longitude | time zone | country. Places, populations and time zones from GeoNames
+// (luckylatlang's cities.db), Hebrew names from Wikidata. Built by ~/projects/mazal-yomi/data/build_cities.py.
+// The first 7 are the original list, with their original coordinates; Judea and Samaria count as IL for the holidays.
+const TZS=["Asia/Jerusalem", "America/New_York", "Asia/Shanghai", "Africa/Kinshasa", "Europe/Istanbul", "Africa/Lagos", "Asia/Ho_Chi_Minh", "Asia/Karachi", "Asia/Kolkata", "America/Sao_Paulo", "America/Mexico_City", "Europe/Moscow", "Asia/Dhaka", "Asia/Seoul", "Asia/Tokyo", "Africa/Cairo", "Africa/Johannesburg", "Europe/London", "Asia/Jakarta", "Asia/Bangkok", "Asia/Taipei", "America/Lima", "America/Bogota", "Asia/Hong_Kong", "Asia/Baghdad", "Asia/Tehran", "Africa/Abidjan", "Australia/Sydney", "Australia/Brisbane", "Asia/Singapore", "Australia/Melbourne", "Africa/Dar_es_Salaam", "America/Santiago", "Africa/Nairobi", "Africa/Addis_Ababa", "America/Los_Angeles", "Asia/Dubai", "Africa/Casablanca", "Europe/Berlin", "Europe/Madrid", "America/Caracas", "Europe/Kyiv", "America/Argentina/Buenos_Aires", "America/Toronto", "America/Chicago", "Australia/Perth", "Asia/Baku", "Europe/Rome", "America/Havana", "Europe/Paris", "Asia/Tashkent", "Asia/Almaty", "Europe/Bucharest", "Europe/Minsk", "Europe/Budapest", "Europe/Warsaw", "Europe/Vienna", "America/Phoenix", "Pacific/Auckland", "Europe/Stockholm", "Australia/Adelaide", "America/Edmonton", "Asia/Amman", "America/Montevideo", "Europe/Prague", "Europe/Copenhagen", "Europe/Sofia", "Europe/Oslo", "Asia/Tbilisi", "Europe/Dublin", "Europe/Brussels", "America/Winnipeg", "Europe/Riga", "Europe/Amsterdam", "America/Denver", "Africa/Tunis", "Europe/Athens", "America/Vancouver", "Europe/Helsinki", "America/Detroit", "Europe/Vilnius", "Europe/Lisbon", "Europe/Zurich", "America/Panama"];
+const CITY_DATA="ירושלים|31.778|35.235|0|IL;תל אביב|32.085|34.781|0|IL;חיפה|32.794|34.989|0|IL;עפולה|32.607|35.289|0|IL;באר שבע|31.252|34.791|0|IL;אילת|29.557|34.951|0|IL;ניו יורק|40.713|-74.006|1|US;ראשון לציון|31.971|34.789|0|IL;פתח תקווה|32.087|34.887|0|IL;נתניה|32.333|34.860|0|IL;אשדוד|31.792|34.650|0|IL;בני ברק|32.081|34.834|0|IL;חולון|32.010|34.779|0|IL;רמת גן|32.082|34.811|0|IL;רחובות|31.894|34.812|0|IL;אשקלון|31.669|34.571|0|IL;בת ים|32.024|34.752|0|IL;בית שמש|31.731|34.993|0|IL;כפר סבא|32.175|34.907|0|IL;יפו|32.050|34.752|0|IL;הרצליה|32.166|34.825|0|IL;חדרה|32.442|34.904|0|IL;מודיעין|31.894|35.015|0|IL;נצרת|32.701|35.297|0|IL;לוד|31.947|34.890|0|IL;מודיעין עילית|31.932|35.044|0|IL;רמלה|31.926|34.864|0|IL;רעננה|32.184|34.874|0|IL;ראש העין|32.096|34.957|0|IL;ביתר עילית|31.697|35.116|0|IL;הוד השרון|32.159|34.893|0|IL;קריית גת|31.610|34.764|0|IL;גבעתיים|32.072|34.813|0|IL;קריית אתא|32.811|35.113|0|IL;נהריה|33.009|35.098|0|IL;אום אל-פחם|32.518|35.154|0|IL;עכו|32.928|35.076|0|IL;נס ציונה|31.929|34.799|0|IL;אלעד|32.050|34.954|0|IL;יבנה|31.878|34.740|0|IL;רמת השרון|32.146|34.839|0|IL;כרמיאל|32.910|35.298|0|IL;פרדס חנה-כרכור|32.474|34.978|0|IL;טבריה|32.794|35.532|0|IL;טייבה|32.266|35.009|0|IL;קריית ביאליק|32.828|35.086|0|IL;נתיבות|31.423|34.589|0|IL;נוף הגליל|32.708|35.325|0|IL;קריית מוצקין|32.837|35.078|0|IL;שפרעם|32.806|35.169|0|IL;קריית אונו|32.061|34.856|0|IL;קריית ים|32.850|35.070|0|IL;מעלה אדומים|31.777|35.299|0|IL;אור יהודה|32.029|34.858|0|IL;דימונה|31.071|35.033|0|IL;צפת|32.965|35.496|0|IL;אופקים|31.314|34.620|0|IL;סח׳נין|32.865|35.298|0|IL;גדרה|31.815|34.780|0|IL;באקה אל-גרבייה|32.418|35.043|0|IL;יהוד-מונוסון|32.028|34.880|0|IL;גבעת שמואל|32.078|34.849|0|IL;ערד|31.259|35.213|0|IL;טירת כרמל|32.760|34.969|0|IL;באר יעקב|31.939|34.837|0|IL;שדרות|31.525|34.597|0|IL;טירה|32.234|34.950|0|IL;טמרה|32.853|35.199|0|IL;מגדל העמק|32.678|35.242|0|IL;קריית מלאכי|31.729|34.746|0|IL;גני תקווה|32.060|34.873|0|IL;דאלית אל-כרמל|32.694|35.047|0|IL;ערערה|32.496|35.093|0|IL;כפר יונה|32.317|34.935|0|IL;נשר|32.766|35.044|0|IL;מבשרת ציון|31.802|35.151|0|IL;גן יבנה|31.787|34.707|0|IL;כפר קאסם|32.114|34.976|0|IL;יקנעם עילית|32.647|35.092|0|IL;זכרון יעקב|32.569|34.954|0|IL;מע׳אר|32.889|35.408|0|IL;כפר כנא|32.747|35.342|0|IL;קריית שמונה|33.212|35.570|0|IL;קדימה-צורן|32.278|34.919|0|IL;מעלות-תרשיחא|33.017|35.267|0|IL;חורה|31.301|34.936|0|IL;ג׳דיידה-מכר|32.928|35.157|0|IL;כסייפה|31.245|35.093|0|IL;שוהם|31.999|34.946|0|IL;אריאל|32.106|35.184|0|IL;תל שבע|31.249|34.860|0|IL;כפר מנדא|32.811|35.261|0|IL;רהט|31.395|34.757|0|IL;כפר קרע|32.505|35.052|0|IL;אור עקיבא|32.506|34.921|0|IL;קריית טבעון|32.712|35.125|0|IL;ערערה בנגב|31.160|35.023|0|IL;ירכא|32.954|35.212|0|IL;קלנסווה|32.285|34.981|0|IL;בית שאן|32.497|35.496|0|IL;בנימינה-גבעת עדה|32.523|34.945|0|IL;ריינה|32.722|35.316|0|IL;מג׳ד אל-כרום|32.921|35.254|0|IL;ג׳סר א-זרקא|32.537|34.913|0|IL;מזכרת בתיה|31.854|34.846|0|IL;מעלה עירון|32.554|35.184|0|IL;אכסאל|32.682|35.324|0|IL;אבו סנאן|32.959|35.172|0|IL;כאבול|32.869|35.212|0|IL;לקיה|31.319|34.859|0|IL;אבן יהודה|32.270|34.888|0|IL;עין מאהל|32.723|35.353|0|IL;אעבלין|32.822|35.193|0|IL;פוריידיס|32.597|34.953|0|IL;תל מונד|32.250|34.917|0|IL;נחף|32.933|35.318|0|IL;אזור|32.024|34.806|0|IL;רכסים|32.750|35.101|0|IL;דייר אל-אסד|32.936|35.264|0|IL;עספיא|32.718|35.065|0|IL;ג׳ת|32.398|35.039|0|IL;בית ג׳ן|32.965|35.377|0|IL;גבעת זאב|31.861|35.169|0|IL;קריית עקרון|31.861|34.823|0|IL;שגב שלום|31.199|34.840|0|IL;דיר חנא|32.862|35.364|0|IL;ירוחם|30.988|34.932|0|IL;ג׳לג׳וליה|32.155|34.954|0|IL;כפר יאסיף|32.955|35.162|0|IL;אפרת|31.653|35.150|0|IL;אורנית|32.132|34.991|0|IL;כוכב יאיר|32.226|35.002|0|IL;כוכב יעקב|31.881|35.244|0|IL;אלפי מנשה|32.173|35.012|0|IL;קריית ארבע|31.535|35.121|0|IL;קצרין|32.992|35.691|0|IL;מצפה רמון|30.609|34.801|0|IL;קדומים|32.212|35.157|0|IL;כפר תבור|32.688|35.420|0|IL;אלקנה|32.110|35.032|0|IL;עמנואל|32.161|35.136|0|IL;הר אדר|31.828|35.131|0|IL;ראש פינה|32.969|35.542|0|IL;מטולה|33.279|35.579|0|IL;קרני שומרון|32.171|35.098|0|IL;שאנגחאי|31.222|121.458|2|CN;בייג׳ינג|39.907|116.397|2|CN;שנז׳ן|22.546|114.068|2|CN;גואנגג׳ואו|23.117|113.250|2|CN;קינשאסה|-4.328|15.314|3|CD;איסטנבול|41.014|28.950|4|TR;לאגוס|6.454|3.395|5|NG;הו צ׳י מין סיטי|10.823|106.630|6|VN;לאהור|31.558|74.351|7|PK;מומבאי|19.073|72.883|8|IN;סאו פאולו|-23.547|-46.636|9|BR;מקסיקו סיטי|19.428|-99.128|10|MX;קראצ׳י|24.861|67.010|7|PK;דלהי|28.652|77.231|8|IN;מוסקבה|55.752|37.618|11|RU;דאקה|23.710|90.407|12|BD;סיאול|37.566|126.978|13|KR;טוקיו|35.690|139.692|14|JP;קהיר|30.063|31.250|15|EG;יוהנסבורג|-26.202|28.044|16|ZA;לונדון|51.509|-0.126|17|GB;ג׳קרטה|-6.215|106.845|18|ID;בנגלור|12.972|77.594|8|IN;האנוי|21.024|105.841|19|VN;טאיפיי|25.053|121.526|20|TW;לימה|-12.043|-77.028|21|PE;בוגוטה|4.610|-74.082|22|CO;הונג קונג|22.278|114.175|23|HK;בגדאד|33.341|44.401|24|IQ;טהראן|35.694|51.422|25|IR;היידראבאד|17.384|78.456|8|IN;ריו דה ז׳ניירו|-22.906|-43.182|9|BR;אחמדאבאד|23.026|72.587|8|IN;אביג׳אן|5.354|-4.002|26|CI;סידני|-33.868|151.207|27|AU;בריזבן|-27.468|153.028|28|AU;סינגפור|1.290|103.850|29|SG;מלבורן|-37.814|144.963|30|AU;דאר א-סלאם|-6.823|39.270|31|TZ;סנקט פטרבורג|59.939|30.314|11|RU;אלכסנדריה|31.202|29.916|15|EG;בנגקוק|13.754|100.501|19|TH;סנטיאגו דה צ׳ילה|-33.457|-70.648|32|CL;קייפטאון|-33.926|18.423|16|ZA;ניירובי|-1.283|36.817|33|KE;אדיס אבבה|9.025|38.747|34|ET;לוס אנג׳לס|34.052|-118.244|35|US;דובאי|25.077|55.309|36|AE;קזבלנקה|33.588|-7.611|37|MA;ברלין|52.524|13.411|38|DE;מדריד|40.416|-3.703|39|ES;קראקס|10.488|-66.879|40|VE;קייב|50.455|30.524|41|UA;בואנוס איירס|-34.613|-58.377|42|AR;טורונטו|43.706|-79.399|43|CA;ברוקלין|40.650|-73.950|1|US;שיקגו|41.850|-87.650|44|US;פרת׳|-31.952|115.861|45|AU;באקו|40.378|49.892|46|AZ;רומא|41.892|12.511|47|IT;יוסטון|29.763|-95.363|44|US;הוואנה|23.133|-82.383|48|CU;פריז|48.853|2.349|49|FR;טשקנט|41.265|69.216|50|UZ;אלמטי|43.252|76.912|51|KZ;המבורג|53.551|9.993|38|DE;בוקרשט|44.432|26.106|52|RO;אבו דאבי|24.451|54.397|36|AE;מונטריאול|45.509|-73.588|43|CA;מינסק|53.900|27.567|53|BY;בודפשט|47.498|19.040|54|HU;ורשה|52.230|21.012|55|PL;וינה|48.208|16.372|56|AT;ברצלונה|41.389|2.159|39|ES;פיניקס|33.448|-112.074|57|US;פילדלפיה|39.952|-75.164|1|US;אוקלנד|-36.849|174.763|58|NZ;סטוקהולם|59.329|18.069|59|SE;מינכן|48.137|11.575|38|DE;אדלייד|-34.929|138.599|60|AU;חרקיב|49.982|36.255|41|UA;סן דייגו|32.716|-117.165|35|US;מילאנו|45.464|9.190|47|IT;דאלאס|32.783|-96.807|44|US;קלגרי|51.050|-114.085|61|CA;עמאן|31.955|35.945|62|JO;מונטווידאו|-34.903|-56.188|63|UY;פראג|50.088|14.421|64|CZ;ברמינגהאם|52.481|-1.900|17|GB;קופנהגן|55.676|12.566|65|DK;סופיה|42.698|23.324|66|BG;אוסלו|59.913|10.746|67|NO;טביליסי|41.691|44.834|68|GE;קלן|50.933|6.950|38|DE;דבלין|53.333|-6.249|69|IE;בריסל|50.850|4.349|70|BE;אוטווה|45.411|-75.698|43|CA;אודסה|46.486|30.744|41|UA;מרקש|31.634|-8.000|37|MA;אוסטין|30.267|-97.743|44|US;דניפרו|48.467|35.041|41|UA;מרסיי|43.297|5.381|49|FR;סן פרנסיסקו|37.775|-122.419|35|US;קרקוב|50.061|19.937|55|PL;סיאטל|47.606|-122.332|35|US;ויניפג|49.884|-97.147|71|CA;ריגה|56.946|24.106|72|LV;אמסטרדם|52.374|4.890|73|NL;דנוור|39.739|-104.985|74|US;לבוב|49.838|24.023|41|UA;תוניס|36.819|10.166|75|TN;וושינגטון|38.895|-77.036|1|US;אתונה|37.984|23.728|76|GR;ונקובר|49.250|-123.119|77|CA;הלסינקי|60.170|24.935|78|FI;בוסטון|42.358|-71.060|1|US;פרנקפורט על המיין|50.116|8.684|38|DE;דטרויט|42.331|-83.046|79|US;לאס וגאס|36.175|-115.137|35|US;גלאזגו|55.865|-4.258|17|GB;דיסלדורף|51.223|6.779|38|DE;בולטימור|39.290|-76.612|1|US;מנצ׳סטר|53.481|-2.237|17|GB;וילנה|54.689|25.280|80|LT;לידס|53.796|-1.548|17|GB;אנטוורפן|51.220|4.400|70|BE;ליון|45.749|4.848|49|FR;ליסבון|38.725|-9.150|81|PT;טולוז|43.604|1.444|49|FR;אטלנטה|33.749|-84.388|1|US;מיאמי|25.774|-80.194|1|US;ציריך|47.367|8.550|82|CH;מיניאפוליס|44.980|-93.264|44|US;פנמה סיטי|8.994|-79.520|83|PA;פירנצה|43.779|11.246|47|IT;קליבלנד|41.499|-81.695|1|US;ניס|43.703|7.266|49|FR;אורלנדו|28.538|-81.379|1|US;סלוניקי|40.641|22.935|76|GR;סינסינטי|39.127|-84.514|1|US;פיטסבורג|40.441|-79.996|1|US;סנט לואיס|38.627|-90.198|44|US;שטרסבורג|48.584|7.746|49|FR;ז׳נבה|46.202|6.146|82|CH;פורט לודרדייל|26.122|-80.143|1|US;באזל|47.558|7.573|82|CH;ניו הייבן|41.308|-72.928|1|US;בוקה רטון|26.359|-80.083|1|US;מיאמי ביץ׳|25.791|-80.130|1|US;אומן|48.750|30.219|41|UA;גייטסהד|54.962|-1.602|17|GB;פסאיק|40.857|-74.128|1|US;לייקווד|40.098|-74.218|1|US;ונציה|45.437|12.333|47|IT;טינק|40.898|-74.016|1|US;מונסי|41.111|-74.068|1|US";
+const CITIES=CITY_DATA.split(';').map(r=>{const[n,a,b,t,c]=r.split('|');return[n,+a,+b,TZS[+t],c]});
+const OLD_CITIES=['ירושלים','תל אביב','חיפה','באר שבע','אילת','ניו יורק'];
+
+function rel(sign,user){const k=(sign-user+12)%12,d=Math.min(k,12-k);
+  return [{t:'במזל שלך',s:2,c:'g'},{t:'במזל שכן',s:0,c:'n'},{t:'במזל ידידותי לך',s:1,c:'g'},{t:'בזווית מאתגרת למזלך',s:-1,c:'w'},{t:'באותו יסוד כמוך',s:2,c:'g'},{t:'במזל רחוק ממך',s:0,c:'n'},{t:'מול המזל שלך',s:-1.5,c:'w'}][d];}
+function gem(n){if(n===15)return'ט״ו';if(n===16)return'ט״ז';const L=[[400,'ת'],[300,'ש'],[200,'ר'],[100,'ק'],[90,'צ'],[80,'פ'],[70,'ע'],[60,'ס'],[50,'נ'],[40,'מ'],[30,'ל'],[20,'כ'],[10,'י'],[9,'ט'],[8,'ח'],[7,'ז'],[6,'ו'],[5,'ה'],[4,'ד'],[3,'ג'],[2,'ב'],[1,'א']];
+ let s='';for(const[v,c]of L){while(n>=v){s+=c;n-=v;}}s=s.replace('יה','טו').replace('יו','טז');return s.length>1?s.slice(0,-1)+'״'+s.slice(-1):s+'׳';}
+function heb(date){
+  const p=new Intl.DateTimeFormat('en-u-ca-hebrew',{day:'numeric',month:'long',year:'numeric'}).formatToParts(date);
+  const g=t=>p.find(x=>x.type===t)?.value||'';
+  const mn=g('month'),day=parseInt(g('day')),yr=parseInt(g('year'));
+  const keys=['Nisan','Iyar','Sivan','Tam','Av','Elul','Tishri','Hesh','Kislev','Tevet','Shevat','Adar'];
+  let idx=keys.findIndex(k=>mn.startsWith(k));if(idx<0&&/Che|Mar/.test(mn))idx=7;if(idx<0&&/Tish/.test(mn))idx=6;
+  const heName=new Intl.DateTimeFormat('he-u-ca-hebrew',{month:'long'}).format(date);
+  return{idx,day,yr,mn,heName,str:`${gem(day)} ב${heName} ${gem(yr%1000)}`};
+}
+function hash(s){let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function pick(arr,r,k){const a=[...arr],o=[];while(o.length<k&&a.length)o.push(a.splice(Math.floor(r()*a.length),1)[0]);return o;}
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const hm=(d,tz=TZ)=>(HMF[tz]||(HMF[tz]=new Intl.DateTimeFormat('he-IL',{hour:'2-digit',minute:'2-digit',hourCycle:'h23',timeZone:tz}))).format(d);
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hh=h=>String(h%24).padStart(2,'0')+':00';
+const $=id=>document.getElementById(id);
+const css=v=>getComputedStyle($('skyBand')||document.documentElement).getPropertyValue(v).trim(); // the wheel and the Moon are drawn on the night band
+// Static star dots: on the night band, and behind the whole page in dark mode (its opacity comes from --stars-op)
+function drawStars(cv,density,seed){
+  if(!cv)return;const r=cv.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(1,Math.round(r.width)),h=Math.max(1,Math.round(r.height));
+  if(cv.width!==w*dpr||cv.height!==h*dpr){cv.width=w*dpr;cv.height=h*dpr;}
+  const x=cv.getContext('2d');if(!x)return;x.setTransform(dpr,0,0,dpr,0,0);x.clearRect(0,0,w,h);
+  let sd=seed>>>0;const rn=()=>{sd=(Math.imul(sd,1664525)+1013904223)>>>0;return sd/4294967296;};
+  x.fillStyle=getComputedStyle(cv).getPropertyValue('--star').trim()||'#f3e6c4';
+  for(let i=0,n=Math.round(w*h*density);i<n;i++){x.globalAlpha=0.18+rn()*0.55;x.beginPath();x.arc(rn()*w,rn()*h,0.4+rn()*1.1,0,2*Math.PI);x.fill();}
+  x.globalAlpha=1;
+}
+const paintStars=()=>{drawStars(document.querySelector('#skyBand .bandstars'),0.0009,7);drawStars($('starsBg'),0.00022,11);};
+let starT=0;window.addEventListener('resize',()=>{clearTimeout(starT);starT=setTimeout(paintStars,150);});
+
+function eventsBuiltin(day,dh){
+  const ev=[],{idx,day:d,mn}=dh,w=day.getDay(),adarI=/Adar I$/.test(mn);
+  if(w===6)ev.push('שבת קודש');if(w===5)ev.push('ערב שבת');
+  if(d===30||(d===1&&idx!==6))ev.push('ראש חודש '+(d===30?heb(new Date(day.getTime()+86400000)).heName:dh.heName));
+  const H={'6-1':'ראש השנה','6-2':'ראש השנה','6-3':'צום גדליה','6-10':'יום כיפור','6-15':'סוכות','6-21':'הושענא רבה','6-22':'שמיני עצרת ושמחת תורה',
+   '9-10':'עשרה בטבת','10-15':'ט״ו בשבט','0-14':'ערב פסח','0-15':'פסח','0-21':'שביעי של פסח','1-14':'פסח שני','1-18':'ל״ג בעומר','2-6':'שבועות',
+   '3-17':'י״ז בתמוז','4-9':'תשעה באב','4-15':'ט״ו באב','5-29':'ערב ראש השנה'};
+  if(H[idx+'-'+d])ev.push(H[idx+'-'+d]);
+  if(idx===6&&d>=16&&d<=20)ev.push('חול המועד סוכות');if(idx===0&&d>=16&&d<=20)ev.push('חול המועד פסח');
+  if(idx===11&&!adarI){if(d===13)ev.push('תענית אסתר');if(d===14)ev.push('פורים');if(d===15)ev.push('שושן פורים');}
+  if(idx===11&&adarI&&d===14)ev.push('פורים קטן');
+  for(let k=0;k<8;k++){const h=heb(new Date(day.getTime()-k*86400000));if(h.idx===8&&h.day===25){ev.push(`חנוכה, נר ${gem(k+1)}`);break;}}
+  let om=0;if(idx===0&&d>=16)om=d-15;else if(idx===1)om=15+d;else if(idx===2&&d<=5)om=44+d;
+  if(om)ev.push(`ספירת העומר: ${om} לעומר (בערב: ${om+1<=49?om+1:''})`.replace(' (בערב: )',''));
+  if(idx===5)ev.push('חודש אלול, ימי רחמים');
+  return ev;
+}
+function events(day,dh,il){
+  if(HC){try{return eventsHebcal(day,dh,il)}catch(e){}}
+  const ev=eventsBuiltin(day,dh);ev.holy=ev.find(e=>HOLY.includes(e))||null;return ev;
+}
+
+let offset=0,birth=null;
+const load=()=>{try{return JSON.parse(localStorage.getItem('mazal')||'null')}catch(e){return null}};
+const save=v=>{try{localStorage.setItem('mazal',JSON.stringify(v))}catch(e){}};
+
+function wheelSVG(sky,user){
+  const c=160,R1=150,R2=118,pt=(r,lon)=>{const a=(180+lon)*rad;return[c+r*Math.cos(a),c-r*Math.sin(a)]};
+  let s=`<svg viewBox="0 0 320 320" role="img" aria-label="גלגל המזלות עם מיקום הכוכבים היום">`;
+  s+=`<circle cx="${c}" cy="${c}" r="${R1}" fill="${css('--surface')}" stroke="${css('--line')}"/>`;
+  const [a1,b1]=pt(R1,user*30),[a2,b2]=pt(R1,user*30+30),[a3,b3]=pt(R2,user*30+30),[a4,b4]=pt(R2,user*30);
+  s+=`<path d="M${a1} ${b1} A${R1} ${R1} 0 0 0 ${a2} ${b2} L${a3} ${b3} A${R2} ${R2} 0 0 1 ${a4} ${b4}Z" fill="${css('--gold-soft')}" stroke="${css('--gold')}"/>`;
+  s+=`<circle cx="${c}" cy="${c}" r="${R2}" fill="none" stroke="${css('--line')}"/>`;
+  for(let i=0;i<12;i++){const[x1,y1]=pt(R2,i*30),[x2,y2]=pt(R1,i*30),[tx,ty]=pt((R1+R2)/2,i*30+15);
+    s+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${css('--line')}"/>`;
+    s+=`<text x="${tx}" y="${ty}" font-size="11" text-anchor="middle" dominant-baseline="middle" fill="${i===user?css('--gold'):css('--muted')}" font-weight="${i===user?700:400}" font-family="Rubik,sans-serif">${M[i].n}</text>`;}
+  s+=`<circle cx="${c}" cy="${c}" r="4" fill="${css('--muted')}"/>`;
+  sky.forEach((p,i)=>{const r=98-(i%3)*24,[x,y]=pt(r,p.lon),[lx,ly]=pt(R2-2,p.lon);
+    const col=p.name==='לבנה'?css('--techelet'):p.name==='חמה'?css('--gold'):css('--ink');
+    s+=`<line x1="${x}" y1="${y}" x2="${lx}" y2="${ly}" stroke="${col}" stroke-opacity=".35"/>`;
+    s+=`<circle cx="${x}" cy="${y}" r="5" fill="${col}"/>`;
+    s+=`<text x="${x}" y="${y-9}" font-size="11" text-anchor="middle" fill="${col}" font-family="Rubik,sans-serif">${p.name}</text>`;});
+  return s+'</svg>';
+}
+function drawMoon(elong){
+  const cv=$('moonC'),x=cv.getContext('2d'),r=76,c=84;x.clearRect(0,0,168,168);
+  x.fillStyle=css('--techelet-soft');x.beginPath();x.arc(c,c,r,0,2*Math.PI);x.fill();
+  const k=Math.cos(elong*rad),waxing=elong<180;x.fillStyle=css('--gold');x.beginPath();
+  x.arc(c,c,r,-Math.PI/2,Math.PI/2,!waxing);x.ellipse(c,c,Math.abs(k)*r,r,0,Math.PI/2,-Math.PI/2,waxing?k>0:k<0);x.fill();
+  x.strokeStyle=css('--line');x.lineWidth=2;x.beginPath();x.arc(c,c,r,0,2*Math.PI);x.stroke();
+}
+
+// Pirkei Avot, Torat Emet 357 edition via Sefaria (public domain), without vowels: [chapter, mishna, text]
+const AVOT=[[1,1,"משה קבל תורה מסיני, ומסרה ליהושע, ויהושע לזקנים, וזקנים לנביאים, ונביאים מסרוה לאנשי כנסת הגדולה. הם אמרו שלשה דברים, הוו מתונים בדין, והעמידו תלמידים הרבה, ועשו סיג לתורה:"],[1,2,"שמעון הצדיק היה משירי כנסת הגדולה. הוא היה אומר, על שלשה דברים העולם עומד, על התורה ועל העבודה ועל גמילות חסדים:"],[1,3,"אנטיגנוס איש סוכו קבל משמעון הצדיק. הוא היה אומר, אל תהיו כעבדים המשמשין את הרב על מנת לקבל פרס, אלא הוו כעבדים המשמשין את הרב שלא על מנת לקבל פרס, ויהי מורא שמים עליכם:"],[1,4,"יוסי בן יועזר איש צרדה ויוסי בן יוחנן איש ירושלים קבלו מהם. יוסי בן יועזר איש צרדה אומר, יהי ביתך בית ועד לחכמים, והוי מתאבק בעפר רגליהם, והוי שותה בצמא את דבריהם:"],[1,5,"יוסי בן יוחנן איש ירושלים אומר, יהי ביתך פתוח לרוחה, ויהיו עניים בני ביתך, ואל תרבה שיחה עם האשה. באשתו אמרו, קל וחמר באשת חברו. מכאן אמרו חכמים, כל זמן שאדם מרבה שיחה עם האשה, גורם רעה לעצמו, ובוטל מדברי תורה, וסופו יורש גיהנם:"],[1,6,"יהושע בן פרחיה ונתאי הארבלי קבלו מהם. יהושע בן פרחיה אומר, עשה לך רב, וקנה לך חבר, והוי דן את כל האדם לכף זכות:"],[1,7,"נתאי הארבלי אומר, הרחק משכן רע, ואל תתחבר לרשע, ואל תתיאש מן הפרענות:"],[1,8,"יהודה בן טבאי ושמעון בן שטח קבלו מהם. יהודה בן טבאי אומר, אל תעש עצמך כעורכי הדינין. וכשיהיו בעלי דינין עומדים לפניך, יהיו בעיניך כרשעים. וכשנפטרים מלפניך, יהיו בעיניך כזכאין, כשקבלו עליהם את הדין:"],[1,9,"שמעון בן שטח אומר, הוי מרבה לחקר את העדים, והוי זהיר בדבריך, שמא מתוכם ילמדו לשקר:"],[1,10,"שמעיה ואבטליון קבלו מהם. שמעיה אומר, אהב את המלאכה, ושנא את הרבנות, ואל תתודע לרשות:"],[1,11,"אבטליון אומר, חכמים, הזהרו בדבריכם, שמא תחובו חובת גלות ותגלו למקום מים הרעים, וישתו התלמידים הבאים אחריכם וימותו, ונמצא שם שמים מתחלל:"],[1,12,"הלל ושמאי קבלו מהם. הלל אומר, הוי מתלמידיו של אהרן, אוהב שלום ורודף שלום, אוהב את הבריות ומקרבן לתורה:"],[1,13,"הוא היה אומר, נגד שמא, אבד שמה. ודלא מוסיף, יסף. ודלא יליף, קטלא חיב. ודאשתמש בתגא, חלף:"],[1,14,"הוא היה אומר, אם אין אני לי, מי לי. וכשאני לעצמי, מה אני. ואם לא עכשיו, אימתי:"],[1,15,"שמאי אומר, עשה תורתך קבע. אמר מעט ועשה הרבה, והוי מקבל את כל האדם בסבר פנים יפות:"],[1,16,"רבן גמליאל היה אומר, עשה לך רב, והסתלק מן הספק, ואל תרבה לעשר אמדות:"],[1,17,"שמעון בנו אומר, כל ימי גדלתי בין החכמים, ולא מצאתי לגוף טוב אלא שתיקה. ולא המדרש הוא העקר, אלא המעשה. וכל המרבה דברים, מביא חטא:"],[1,18,"רבן שמעון בן גמליאל אומר, על שלשה דברים העולם עומד, על הדין ועל האמת ועל השלום, שנאמר (זכריה ח) אמת ומשפט שלום שפטו בשעריכם:"],[2,1,"רבי אומר, איזוהי דרך ישרה שיבר לו האדם, כל שהיא תפארת לעושיה ותפארת לו מן האדם. והוי זהיר במצוה קלה כבחמורה, שאין אתה יודע מתן שכרן של מצות. והוי מחשב הפסד מצוה כנגד שכרה, ושכר עברה כנגד הפסדה. והסתכל בשלשה דברים ואי אתה בא לידי עברה, דע מה למעלה ממך, עין רואה ואזן שומעת, וכל מעשיך בספר נכתבין:"],[2,2,"רבן גמליאל בנו של רבי יהודה הנשיא אומר, יפה תלמוד תורה עם דרך ארץ, שיגיעת שניהם משכחת עון. וכל תורה שאין עמה מלאכה, סופה בטלה וגוררת עון. וכל העמלים עם הצבור, יהיו עמלים עמהם לשם שמים, שזכות אבותם מסיעתן וצדקתם עומדת לעד. ואתם, מעלה אני עליכם שכר הרבה כאלו עשיתם:"],[2,3,"הוו זהירין ברשות, שאין מקרבין לו לאדם אלא לצרך עצמן. נראין כאוהבין בשעת הנאתן, ואין עומדין לו לאדם בשעת דחקו:"],[2,4,"הוא היה אומר, עשה רצונו כרצונך, כדי שיעשה רצונך כרצונו. בטל רצונך מפני רצונו, כדי שיבטל רצון אחרים מפני רצונך. הלל אומר, אל תפרש מן הצבור, ואל תאמין בעצמך עד יום מותך, ואל תדין את חברך עד שתגיע למקומו, ואל תאמר דבר שאי אפשר לשמע, שסופו להשמע. ואל תאמר לכשאפנה אשנה, שמא לא תפנה:"],[2,5,"הוא היה אומר, אין בור ירא חטא, ולא עם הארץ חסיד, ולא הבישן למד, ולא הקפדן מלמד, ולא כל המרבה בסחורה מחכים. ובמקום שאין אנשים, השתדל להיות איש:"],[2,6,"אף הוא ראה גלגלת אחת שצפה על פני המים. אמר לה, על דאטפת, אטפוך. וסוף מטיפיך יטופון:"],[2,7,"הוא היה אומר, מרבה בשר, מרבה רמה. מרבה נכסים, מרבה דאגה. מרבה נשים, מרבה כשפים. מרבה שפחות, מרבה זמה. מרבה עבדים, מרבה גזל. מרבה תורה, מרבה חיים. מרבה ישיבה, מרבה חכמה. מרבה עצה, מרבה תבונה. מרבה צדקה, מרבה שלום. קנה שם טוב, קנה לעצמו. קנה לו דברי תורה, קנה לו חיי העולם הבא:"],[2,8,"רבן יוחנן בן זכאי קבל מהלל ומשמאי. הוא היה אומר, אם למדת תורה הרבה, אל תחזיק טובה לעצמך, כי לכך נוצרת. חמשה תלמידים היו לו לרבן יוחנן בן זכאי, ואלו הן, רבי אליעזר בן הורקנוס, ורבי יהושע בן חנניה, ורבי יוסי הכהן, ורבי שמעון בן נתנאל, ורבי אלעזר בן ערך. הוא היה מונה שבחן. רבי אליעזר בן הורקנוס, בור סוד שאינו מאבד טפה. רבי יהושע בן חנניה, אשרי יולדתו. רבי יוסי הכהן, חסיד. רבי שמעון בן נתנאל, ירא חטא. ורבי אלעזר בן ערך, מעין המתגבר. הוא היה אומר, אם יהיו כל חכמי ישראל בכף מאזנים, ואליעזר בן הורקנוס בכף שניה, מכריע את כלם. אבא שאול אומר משמו, אם יהיו כל חכמי ישראל בכף מאזנים ורבי אליעזר בן הורקנוס אף עמהם, ורבי אלעזר בן ערך בכף שניה, מכריע את כלם:"],[2,9,"אמר להם, צאו וראו איזוהי דרך ישרה שידבק בה האדם. רבי אליעזר אומר, עין טובה. רבי יהושע אומר, חבר טוב. רבי יוסי אומר, שכן טוב. רבי שמעון אומר, הרואה את הנולד. רבי אלעזר אומר, לב טוב. אמר להם, רואה אני את דברי אלעזר בן ערך מדבריכם, שבכלל דבריו דבריכם. אמר להם צאו וראו איזוהי דרך רעה שיתרחק ממנה האדם. רבי אליעזר אומר, עין רעה. רבי יהושע אומר, חבר רע. רבי יוסי אומר, שכן רע. רבי שמעון אומר, הלוה ואינו משלם. אחד הלוה מן האדם, כלוה מן המקום ברוך הוא, שנאמר (תהלים לז) לוה רשע ולא ישלם, וצדיק חונן ונותן. רבי אלעזר אומר, לב רע. אמר להם, רואה אני את דברי אלעזר בן ערך מדבריכם, שבכלל דבריו דבריכם:"],[2,10,"הם אמרו שלשה דברים. רבי אליעזר אומר, יהי כבוד חברך חביב עליך כשלך, ואל תהי נוח לכעס. ושוב יום אחד לפני מיתתך. והוי מתחמם כנגד אורן של חכמים, והוי זהיר בגחלתן שלא תכוה, שנשיכתן נשיכת שועל, ועקיצתן עקיצת עקרב, ולחישתן לחישת שרף, וכל דבריהם כגחלי אש:"],[2,11,"רבי יהושע אומר, עין הרע, ויצר הרע, ושנאת הבריות, מוציאין את האדם מן העולם:"],[2,12,"רבי יוסי אומר, יהי ממון חברך חביב עליך כשלך, והתקן עצמך ללמד תורה, שאינה ירשה לך. וכל מעשיך יהיו לשם שמים:"],[2,13,"רבי שמעון אומר, הוי זהיר בקריאת שמע ובתפלה. וכשאתה מתפלל, אל תעש תפלתך קבע, אלא רחמים ותחנונים לפני המקום ברוך הוא, שנאמר (יואל ב) כי חנון ורחום הוא ארך אפים ורב חסד ונחם על הרעה. ואל תהי רשע בפני עצמך:"],[2,14,"רבי אלעזר אומר, הוי שקוד ללמד תורה, ודע מה שתשיב לאפיקורוס. ודע לפני מי אתה עמל. ונאמן הוא בעל מלאכתך שישלם לך שכר פעלתך:"],[2,15,"רבי טרפון אומר, היום קצר והמלאכה מרבה, והפועלים עצלים, והשכר הרבה, ובעל הבית דוחק:"],[2,16,"הוא היה אומר, לא עליך המלאכה לגמר, ולא אתה בן חורין לבטל ממנה. אם למדת תורה הרבה, נותנים לך שכר הרבה. ונאמן הוא בעל מלאכתך שישלם לך שכר פעלתך. ודע מתן שכרן של צדיקים לעתיד לבא:"],[3,1,"עקביא בן מהללאל אומר, הסתכל בשלשה דברים ואי אתה בא לידי עברה. דע מאין באת, ולאן אתה הולך, ולפני מי אתה עתיד לתן דין וחשבון. מאין באת, מטפה סרוחה, ולאן אתה הולך, למקום עפר רמה ותולעה. ולפני מי אתה עתיד לתן דין וחשבון, לפני מלך מלכי המלכים הקדוש ברוך הוא:"],[3,2,"רבי חנינא סגן הכהנים אומר, הוי מתפלל בשלומה של מלכות, שאלמלא מוראה, איש את רעהו חיים בלעו. רבי חנינא בן תרדיון אומר, שנים שיושבין ואין ביניהן דברי תורה, הרי זה מושב לצים, שנאמר (תהלים א) ובמושב לצים לא ישב. אבל שנים שיושבין ויש ביניהם דברי תורה, שכינה שרויה ביניהם, שנאמר (מלאכי ג) אז נדברו יראי יי איש אל רעהו ויקשב יי וישמע ויכתב ספר זכרון לפניו ליראי יי ולחשבי שמו. אין לי אלא שנים, מנין שאפלו אחד שיושב ועוסק בתורה, שהקדוש ברוך הוא קובע לו שכר, שנאמר (איכה ג) ישב בדד וידם כי נטל עליו:"],[3,3,"רבי שמעון אומר, שלשה שאכלו על שלחן אחד ולא אמרו עליו דברי תורה, כאלו אכלו מזבחי מתים, שנאמר (ישעיה כח) כי כל שלחנות מלאו קיא צאה בלי מקום. אבל שלשה שאכלו על שלחן אחד ואמרו עליו דברי תורה, כאלו אכלו משלחנו של מקום ברוך הוא, שנאמר (יחזקאל מא) וידבר אלי זה השלחן אשר לפני ה':"],[3,4,"רבי חנינא בן חכינאי אומר, הנעור בלילה והמהלך בדרך יחידי והמפנה לבו לבטלה, הרי זה מתחיב בנפשו:"],[3,5,"רבי נחוניא בן הקנה אומר, כל המקבל עליו על תורה, מעבירין ממנו על מלכות ועל דרך ארץ. וכל הפורק ממנו על תורה, נותנין עליו על מלכות ועל דרך ארץ:"],[3,6,"רבי חלפתא בן דוסא איש כפר חנניה אומר, עשרה שיושבין ועוסקין בתורה, שכינה שרויה ביניהם, שנאמר (תהלים פב) אלהים נצב בעדת אל. ומנין אפלו חמשה, שנאמר (עמוס ט) ואגדתו על ארץ יסדה. ומנין אפלו שלשה, שנאמר (תהלים פב) בקרב אלהים ישפט. ומנין אפלו שנים, שנאמר (מלאכי ג) אז נדברו יראי ה' איש אל רעהו ויקשב ה' וישמע וגו'. ומנין אפלו אחד, שנאמר (שמות כ) בכל המקום אשר אזכיר את שמי אבא אליך וברכתיך:"],[3,7,"רבי אלעזר איש ברתותא אומר, תן לו משלו, שאתה ושלך שלו. וכן בדוד הוא אומר (דברי הימים א כט) כי ממך הכל ומידך נתנו לך. רבי שמעון אומר, המהלך בדרך ושונה, ומפסיק ממשנתו ואומר, מה נאה אילן זה ומה נאה ניר זה, מעלה עליו הכתוב כאלו מתחיב בנפשו:"],[3,8,"רבי דוסתאי ברבי ינאי משום רבי מאיר אומר, כל השוכח דבר אחד ממשנתו, מעלה עליו הכתוב כאלו מתחיב בנפשו, שנאמר (דברים ד) רק השמר לך ושמר נפשך מאד פן תשכח את הדברים אשר ראו עיניך. יכול אפלו תקפה עליו משנתו, תלמוד לומר (שם) ופן יסורו מלבבך כל ימי חייך, הא אינו מתחיב בנפשו עד שישב ויסירם מלבו:"],[3,9,"רבי חנינא בן דוסא אומר, כל שיראת חטאו קודמת לחכמתו, חכמתו מתקימת. וכל שחכמתו קודמת ליראת חטאו, אין חכמתו מתקימת. הוא היה אומר, כל שמעשיו מרבין מחכמתו, חכמתו מתקימת. וכל שחכמתו מרבה ממעשיו, אין חכמתו מתקימת:"],[3,10,"הוא היה אומר, כל שרוח הבריות נוחה הימנו, רוח המקום נוחה הימנו. וכל שאין רוח הבריות נוחה הימנו, אין רוח המקום נוחה הימנו. רבי דוסא בן הרכינס אומר, שנה של שחרית, ויין של צהרים, ושיחת הילדים, וישיבת בתי כנסיות של עמי הארץ, מוציאין את האדם מן העולם:"],[3,11,"רבי אלעזר המודעי אומר, המחלל את הקדשים, והמבזה את המועדות, והמלבין פני חברו ברבים, והמפר בריתו של אברהם אבינו עליו השלום, והמגלה פנים בתורה שלא כהלכה, אף על פי שיש בידו תורה ומעשים טובים, אין לו חלק לעולם הבא:"],[3,12,"רבי ישמעאל אומר, הוי קל לראש, ונוח לתשחרת, והוי מקבל את כל האדם בשמחה:"],[3,13,"רבי עקיבא אומר, שחוק וקלות ראש, מרגילין לערוה. מסרת, סיג לתורה. מעשרות, סיג לעשר. נדרים, סיג לפרישות. סיג לחכמה, שתיקה:"],[3,14,"הוא היה אומר, חביב אדם שנברא בצלם. חבה יתרה נודעת לו שנברא בצלם, שנאמר (בראשית ט) כי בצלם אלהים עשה את האדם. חביבין ישראל שנקראו בנים למקום. חבה יתרה נודעת להם שנקראו בנים למקום, שנאמר (דברים יד) בנים אתם לה' אלהיכם. חביבין ישראל שנתן להם כלי חמדה. חבה יתרה נודעת להם שנתן להם כלי חמדה שבו נברא העולם, שנאמר (משלי ד) כי לקח טוב נתתי לכם, תורתי אל תעזבו:"],[3,15,"הכל צפוי, והרשות נתונה, ובטוב העולם נדון. והכל לפי רב המעשה:"],[3,16,"הוא היה אומר, הכל נתון בערבון, ומצודה פרוסה על כל החיים. החנות פתוחה, והחנוני מקיף, והפנקס פתוח, והיד כותבת, וכל הרוצה ללוות יבא וילוה, והגבאים מחזירים תדיר בכל יום, ונפרעין מן האדם מדעתו ושלא מדעתו, ויש להם על מה שיסמכו, והדין דין אמת, והכל מתקן לסעודה:"],[3,17,"רבי אלעזר בן עזריה אומר, אם אין תורה, אין דרך ארץ. אם אין דרך ארץ, אין תורה. אם אין חכמה, אין יראה. אם אין יראה, אין חכמה. אם אין בינה, אין דעת. אם אין דעת, אין בינה. אם אין קמח, אין תורה. אם אין תורה, אין קמח. הוא היה אומר, כל שחכמתו מרבה ממעשיו, למה הוא דומה, לאילן שענפיו מרבין ושרשיו מעטין, והרוח באה ועוקרתו והופכתו על פניו, שנאמר (ירמיה יז) והיה כערער בערבה ולא יראה כי יבוא טוב ושכן חררים במדבר ארץ מלחה ולא תשב. אבל כל שמעשיו מרבין מחכמתו, למה הוא דומה, לאילן שענפיו מעטין ושרשיו מרבין, שאפלו כל הרוחות שבעולם באות ונושבות בו אין מזיזין אותו ממקומו, שנאמר (שם) והיה כעץ שתול על מים ועל יובל ישלח שרשיו ולא יראה כי יבא חם, והיה עלהו רענן, ובשנת בצרת לא ידאג, ולא ימיש מעשות פרי:"],[3,18,"רבי אליעזר בן חסמא אומר, קנין ופתחי נדה, הן הן גופי הלכות. תקופות וגימטריאות, פרפראות לחכמה:"],[4,1,"בן זומא אומר, איזהו חכם, הלומד מכל אדם, שנאמר (תהלים קיט) מכל מלמדי השכלתי כי עדותיך שיחה לי. איזהו גבור, הכובש את יצרו, שנאמר (משלי טז) טוב ארך אפים מגבור ומשל ברוחו מלכד עיר. איזהו עשיר, השמח בחלקו, שנאמר (תהלים קכח) יגיע כפיך כי תאכל אשריך וטוב לך. אשריך, בעולם הזה. וטוב לך, לעולם הבא. איזהו מכבד, המכבד את הבריות, שנאמר (שמואל א ב) כי מכבדי אכבד ובזי יקלו:"],[4,2,"בן עזאי אומר, הוי רץ למצוה קלה כבחמורה, ובורח מן העברה. שמצוה גוררת מצוה, ועברה גוררת עברה. ששכר מצוה, מצוה. ושכר עברה, עברה:"],[4,3,"הוא היה אומר, אל תהי בז לכל אדם, ואל תהי מפליג לכל דבר, שאין לך אדם שאין לו שעה ואין לך דבר שאין לו מקום:"],[4,4,"רבי לויטס איש יבנה אומר, מאד מאד הוי שפל רוח, שתקות אנוש רמה. רבי יוחנן בן ברוקא אומר, כל המחלל שם שמים בסתר, נפרעין ממנו בגלוי. אחד שוגג ואחד מזיד בחלול השם:"],[4,5,"רבי ישמעאל בנו אומר, הלומד תורה על מנת ללמד, מספיקין בידו ללמד וללמד. והלומד על מנת לעשות, מספיקין בידו ללמד וללמד לשמר ולעשות. רבי צדוק אומר, אל תעשם עטרה להתגדל בהם, ולא קרדם לחפר בהם. וכך היה הלל אומר, ודאשתמש בתגא, חלף. הא למדת, כל הנהנה מדברי תורה, נוטל חייו מן העולם:"],[4,6,"רבי יוסי אומר, כל המכבד את התורה, גופו מכבד על הבריות. וכל המחלל את התורה, גופו מחלל על הבריות:"],[4,7,"רבי ישמעאל בנו אומר, החושך עצמו מן הדין, פורק ממנו איבה וגזל ושבועת שוא. והגס לבו בהוראה, שוטה רשע וגס רוח:"],[4,8,"הוא היה אומר, אל תהי דן יחידי, שאין דן יחידי אלא אחד. ואל תאמר קבלו דעתי, שהן רשאין ולא אתה:"],[4,9,"רבי יונתן אומר, כל המקים את התורה מעני, סופו לקימה מעשר. וכל המבטל את התורה מעשר, סופו לבטלה מעני:"],[4,10,"רבי מאיר אומר, הוי ממעט בעסק, ועסק בתורה. והוי שפל רוח בפני כל אדם. ואם בטלת מן התורה, יש לך בטלים הרבה כנגדך. ואם עמלת בתורה, יש לו שכר הרבה לתן לך:"],[4,11,"רבי אליעזר בן יעקב אומר, העושה מצוה אחת, קונה לו פרקליט אחד. והעובר עברה אחת, קונה לו קטגור אחד. תשובה ומעשים טובים, כתריס בפני הפרענות. רבי יוחנן הסנדלר אומר, כל כנסיה שהיא לשם שמים, סופה להתקים. ושאינה לשם שמים, אין סופה להתקים:"],[4,12,"רבי אלעזר בן שמוע אומר, יהי כבוד תלמידך חביב עליך כשלך, וכבוד חברך כמורא רבך, ומורא רבך כמורא שמים:"],[4,13,"רבי יהודה אומר, הוי זהיר בתלמוד, ששגגת תלמוד עולה זדון. רבי שמעון אומר, שלשה כתרים הם, כתר תורה וכתר כהנה וכתר מלכות, וכתר שם טוב עולה על גביהן:"],[4,14,"רבי נהוראי אומר, הוי גולה למקום תורה, ואל תאמר שהיא תבא אחריך, שחבריך יקימוה בידך. ואל בינתך אל תשען (משלי ג):"],[4,15,"רבי ינאי אומר, אין בידינו לא משלות הרשעים ואף לא מיסורי הצדיקים. רבי מתיא בן חרש אומר, הוי מקדים בשלום כל אדם. והוי זנב לאריות, ואל תהי ראש לשועלים:"],[4,16,"רבי יעקב אומר, העולם הזה דומה לפרוזדור בפני העולם הבא. התקן עצמך בפרוזדור, כדי שתכנס לטרקלין:"],[4,17,"הוא היה אומר, יפה שעה אחת בתשובה ומעשים טובים בעולם הזה, מכל חיי העולם הבא. ויפה שעה אחת של קורת רוח בעולם הבא, מכל חיי העולם הזה:"],[4,18,"רבי שמעון בן אלעזר אומר, אל תרצה את חברך בשעת כעסו, ואל תנחמנו בשעה שמתו מטל לפניו, ואל תשאל לו בשעת נדרו, ואל תשתדל לראותו בשעת קלקלתו:"],[4,19,"שמואל הקטן אומר, (משלי כד) בנפל אויבך אל תשמח ובכשלו אל יגל לבך, פן יראה ה' ורע בעיניו והשיב מעליו אפו:"],[4,20,"אלישע בן אבויה אומר, הלומד ילד למה הוא דומה, לדיו כתובה על ניר חדש. והלומד זקן למה הוא דומה, לדיו כתובה על ניר מחוק. רבי יוסי בר יהודה איש כפר הבבלי אומר, הלומד מן הקטנים למה הוא דומה, לאכל ענבים קהות ושותה יין מגתו. והלומד מן הזקנים למה הוא דומה, לאכל ענבים בשלות ושותה יין ישן. רבי אומר, אל תסתכל בקנקן, אלא במה שיש בו. יש קנקן חדש מלא ישן, וישן שאפלו חדש אין בו:"],[4,21,"רבי אלעזר הקפר אומר, הקנאה והתאוה והכבוד, מוציאין את האדם מן העולם:"],[4,22,"הוא היה אומר, הילודים למות, והמתים להחיות, והחיים לדון. לידע להודיע ולהודע שהוא אל, הוא היוצר, הוא הבורא, הוא המבין, הוא הדין, הוא עד, הוא בעל דין, והוא עתיד לדון. ברוך הוא, שאין לפניו לא עולה, ולא שכחה, ולא משוא פנים, ולא מקח שחד, שהכל שלו. ודע שהכל לפי החשבון. ואל יבטיחך יצרך שהשאול בית מנוס לך, שעל כרחך אתה נוצר, ועל כרחך אתה נולד, ועל כרחך אתה חי, ועל כרחך אתה מת, ועל כרחך אתה עתיד לתן דין וחשבון לפני מלך מלכי המלכים הקדוש ברוך הוא:"],[5,1,"בעשרה מאמרות נברא העולם. ומה תלמוד לומר, והלא במאמר אחד יכול להבראות, אלא להפרע מן הרשעים שמאבדין את העולם שנברא בעשרה מאמרות, ולתן שכר טוב לצדיקים שמקימין את העולם שנברא בעשרה מאמרות:"],[5,2,"עשרה דורות מאדם ועד נח, להודיע כמה ארך אפים לפניו, שכל הדורות היו מכעיסין ובאין עד שהביא עליהם את מי המבול. עשרה דורות מנח ועד אברהם, להודיע כמה ארך אפים לפניו, שכל הדורות היו מכעיסין ובאין, עד שבא אברהם וקבל עליו שכר כלם:"],[5,3,"עשרה נסיונות נתנסה אברהם אבינו עליו השלום ועמד בכלם, להודיע כמה חבתו של אברהם אבינו עליו השלום:"],[5,4,"עשרה נסים נעשו לאבותינו במצרים ועשרה על הים. עשר מכות הביא הקדוש ברוך הוא על המצריים במצרים ועשר על הים. עשרה נסיונות נסו אבותינו את המקום ברוך הוא במדבר, שנאמר (במדבר יד) וינסו אתי זה עשר פעמים ולא שמעו בקולי:"],[5,5,"עשרה נסים נעשו לאבותינו בבית המקדש. לא הפילה אשה מריח בשר הקדש, ולא הסריח בשר הקדש מעולם, ולא נראה זבוב בבית המטבחים, ולא ארע קרי לכהן גדול ביום הכפורים, ולא כבו גשמים אש של עצי המערכה, ולא נצחה הרוח את עמוד העשן, ולא נמצא פסול בעמר ובשתי הלחם ובלחם הפנים, עומדים צפופים ומשתחוים רוחים, ולא הזיק נחש ועקרב בירושלים מעולם, ולא אמר אדם לחברו צר לי המקום שאלין בירושלים:"],[5,6,"עשרה דברים נבראו בערב שבת בין השמשות, ואלו הן, פי הארץ, ופי הבאר, ופי האתון, והקשת, והמן, והמטה, והשמיר, והכתב, והמכתב, והלוחות. ויש אומרים, אף המזיקין, וקבורתו של משה, ואילו של אברהם אבינו. ויש אומרים, אף צבת בצבת עשויה:"],[5,7,"שבעה דברים בגלם ושבעה בחכם. חכם אינו מדבר בפני מי שהוא גדול ממנו בחכמה ובמנין, ואינו נכנס לתוך דברי חברו, ואינו נבהל להשיב, שואל כענין ומשיב כהלכה, ואומר על ראשון ראשון ועל אחרון אחרון, ועל מה שלא שמע, אומר לא שמעתי, ומודה על האמת. וחלופיהן בגלם:"],[5,8,"שבעה מיני פרעניות באין לעולם על שבעה גופי עברה. מקצתן מעשרין ומקצתן אינן מעשרין, רעב של בצרת באה, מקצתן רעבים ומקצתן שבעים. גמרו שלא לעשר, רעב של מהומה ושל בצרת באה. ושלא לטל את החלה, רעב של כליה באה. דבר בא לעולם על מיתות האמורות בתורה שלא נמסרו לבית דין, ועל פרות שביעית. חרב באה לעולם על ענוי הדין, ועל עוות הדין, ועל המורים בתורה שלא כהלכה:"],[5,9,"חיה רעה באה לעולם על שבועת שוא, ועל חלול השם. גלות באה לעולם על עובדי עבודה זרה, ועל גלוי עריות, ועל שפיכות דמים, ועל השמטת הארץ. בארבעה פרקים הדבר מתרבה, ברביעית, ובשביעית, ובמוצאי שביעית, ובמוצאי החג שבכל שנה ושנה. ברביעית, מפני מעשר עני שבשלישית. בשביעית, מפני מעשר עני שבששית. ובמוצאי שביעית, מפני פרות שביעית. ובמוצאי החג שבכל שנה ושנה, מפני גזל מתנות עניים:"],[5,10,"ארבע מדות באדם. האומר שלי שלי ושלך שלך, זו מדה בינונית. ויש אומרים, זו מדת סדום. שלי שלך ושלך שלי, עם הארץ. שלי שלך ושלך שלך, חסיד. שלי שלי ושלך שלי, רשע:"],[5,11,"ארבע מדות בדעות. נוח לכעס ונוח לרצות, יצא שכרו בהפסדו. קשה לכעס וקשה לרצות, יצא הפסדו בשכרו. קשה לכעס ונוח לרצות, חסיד. נוח לכעס וקשה לרצות, רשע:"],[5,12,"ארבע מדות בתלמידים. מהר לשמע ומהר לאבד, יצא שכרו בהפסדו. קשה לשמע וקשה לאבד, יצא הפסדו בשכרו. מהר לשמע וקשה לאבד, חכם. קשה לשמע ומהר לאבד, זה חלק רע:"],[5,13,"ארבע מדות בנותני צדקה. הרוצה שיתן ולא יתנו אחרים, עינו רעה בשל אחרים. יתנו אחרים והוא לא יתן, עינו רעה בשלו. יתן ויתנו אחרים, חסיד. לא יתן ולא יתנו אחרים, רשע:"],[5,14,"ארבע מדות בהולכי לבית המדרש. הולך ואינו עושה, שכר הליכה בידו. עושה ואינו הולך, שכר מעשה בידו. הולך ועושה, חסיד. לא הולך ולא עושה, רשע:"],[5,15,"ארבע מדות ביושבים לפני חכמים. ספוג, ומשפך, משמרת, ונפה. ספוג, שהוא סופג את הכל. משפך, שמכניס בזו ומוציא בזו. משמרת, שמוציאה את היין וקולטת את השמרים. ונפה, שמוציאה את הקמח וקולטת את הסלת:"],[5,16,"כל אהבה שהיא תלויה בדבר, בטל דבר, בטלה אהבה. ושאינה תלויה בדבר, אינה בטלה לעולם. איזו היא אהבה התלויה בדבר, זו אהבת אמנון ותמר. ושאינה תלויה בדבר, זו אהבת דוד ויהונתן:"],[5,17,"כל מחלקת שהיא לשם שמים, סופה להתקים. ושאינה לשם שמים, אין סופה להתקים. איזו היא מחלקת שהיא לשם שמים, זו מחלקת הלל ושמאי. ושאינה לשם שמים, זו מחלקת קרח וכל עדתו:"],[5,18,"כל המזכה את הרבים, אין חטא בא על ידו. וכל המחטיא את הרבים, אין מספיקין בידו לעשות תשובה. משה זכה וזכה את הרבים, זכות הרבים תלוי בו, שנאמר (דברים לג) צדקת ה' עשה ומשפטיו עם ישראל. ירבעם חטא והחטיא את הרבים, חטא הרבים תלוי בו, שנאמר (מלכים א טו) על חטאות ירבעם (בן נבט) אשר חטא ואשר החטיא את ישראל:"],[5,19,"כל מי שיש בידו שלשה דברים הללו, מתלמידיו של אברהם אבינו. ושלשה דברים אחרים, מתלמידיו של בלעם הרשע. עין טובה, ורוח נמוכה, ונפש שפלה, מתלמידיו של אברהם אבינו. עין רעה, ורוח גבוהה, ונפש רחבה, מתלמידיו של בלעם הרשע. מה בין תלמידיו של אברהם אבינו לתלמידיו של בלעם הרשע. תלמידיו של אברהם אבינו, אוכלין בעולם הזה ונוחלין בעולם הבא, שנאמר (משלי ח) להנחיל אהבי יש, ואצרתיהם אמלא. אבל תלמידיו של בלעם הרשע יורשין גיהנם ויורדין לבאר שחת, שנאמר (תהלים נה) ואתה אלהים תורידם לבאר שחת, אנשי דמים ומרמה לא יחצו ימיהם, ואני אבטח בך:"],[5,20,"יהודה בן תימא אומר, הוי עז כנמר, וקל כנשר, ורץ כצבי, וגבור כארי, לעשות רצון אביך שבשמים. הוא היה אומר, עז פנים לגיהנם, ובשת פנים לגן עדן. יהי רצון מלפניך יי אלהינו שתבנה עירך במהרה בימינו ותן חלקנו בתורתך:"],[5,21,"הוא היה אומר, בן חמש שנים למקרא, בן עשר למשנה, בן שלש עשרה למצות, בן חמש עשרה לתלמוד, בן שמנה עשרה לחפה, בן עשרים לרדף, בן שלשים לכח, בן ארבעים לבינה, בן חמשים לעצה, בן ששים לזקנה, בן שבעים לשיבה, בן שמנים לגבורה, בן תשעים לשוח, בן מאה כאלו מת ועבר ובטל מן העולם:"],[5,22,"בן בג בג אומר, הפך בה והפך בה, דכלא בה. ובה תחזי, וסיב ובלה בה, ומנה לא תזוע, שאין לך מדה טובה הימנה:"],[5,23,"בן הא הא אומר, לפום צערא אגרא:"],[6,1,"שנו חכמים בלשון המשנה, ברוך שבחר בהם ובמשנתם: רבי מאיר אומר כל העוסק בתורה לשמה, זוכה לדברים הרבה. ולא עוד אלא שכל העולם כלו כדי הוא לו. נקרא רע, אהוב, אוהב את המקום, אוהב את הבריות, משמח את המקום, משמח את הבריות. ומלבשתו ענוה ויראה, ומכשרתו להיות צדיק וחסיד וישר ונאמן, ומרחקתו מן החטא, ומקרבתו לידי זכות, ונהנין ממנו עצה ותושיה בינה וגבורה, שנאמר (משלי ח) לי עצה ותושיה אני בינה לי גבורה. ונותנת לו מלכות וממשלה וחקור דין, ומגלין לו רזי תורה, ונעשה כמעין המתגבר וכנהר שאינו פוסק, והוי צנוע וארך רוח, ומוחל על עלבונו, ומגדלתו ומרוממתו על כל המעשים:"],[6,2,"אמר רבי יהושע בן לוי, בכל יום ויום בת קול יוצאת מהר חורב ומכרזת ואומרת, אוי להם לבריות מעלבונה של תורה. שכל מי שאינו עוסק בתורה נקרא נזוף, שנאמר (משלי יא) נזם זהב באף חזיר אשה יפה וסרת טעם. ואומר (שמות לב) והלחת מעשה אלהים המה והמכתב מכתב אלהים הוא חרות על הלחת, אל תקרא חרות אלא חרות, שאין לך בן חורין אלא מי שעוסק בתלמוד תורה. וכל מי שעוסק בתלמוד תורה הרי זה מתעלה, שנאמר (במדבר כא) וממתנה נחליאל ומנחליאל במות:"],[6,3,"הלומד מחברו פרק אחד או הלכה אחת או פסוק אחד או דבור אחד או אפלו אות אחת, צריך לנהוג בו כבוד, שכן מצינו בדוד מלך ישראל, שלא למד מאחיתפל אלא שני דברים בלבד, קראו רבו אלופו ומידעו, שנאמר (תהלים נה) ואתה אנוש כערכי אלופי ומידעי. והלא דברים קל וחמר, ומה דוד מלך ישראל, שלא למד מאחיתפל אלא שני דברים בלבד קראו רבו אלופו ומידעו, הלומד מחברו פרק אחד או הלכה אחת או פסוק אחד או דבור אחד או אפלו אות אחת, על אחת כמה וכמה שצריך לנהוג בו כבוד. ואין כבוד אלא תורה, שנאמר (משלי ג) כבוד חכמים ינחלו, (משלי כח) ותמימים ינחלו טוב, ואין טוב אלא תורה, שנאמר (משלי ד) כי לקח טוב נתתי לכם תורתי אל תעזבו:"],[6,4,"כך היא דרכה של תורה, פת במלח תאכל, ומים במשורה תשתה, ועל הארץ תישן, וחיי צער תחיה, ובתורה אתה עמל, אם אתה עשה כן, (תהלים קכח) אשריך וטוב לך. אשריך בעולם הזה וטוב לך לעולם הבא:"],[6,5,"אל תבקש גדלה לעצמך, ואל תחמד כבוד, יותר מלמודך עשה, ואל תתאוה לשלחנם של מלכים, ששלחנך גדול משלחנם, וכתרך גדול מכתרם, ונאמן הוא בעל מלאכתך שישלם לך שכר פעלתך:"],[6,6,"גדולה תורה יותר מן הכהנה ומן המלכות, שהמלכות נקנית בשלשים מעלות, והכהנה בעשרים וארבע, והתורה נקנית בארבעים ושמנה דברים. ואלו הן, בתלמוד, בשמיעת האזן, בעריכת שפתים, בבינת הלב, בשכלות הלב, באימה, ביראה, בענוה, בשמחה, בטהרה, בשמוש חכמים, בדקדוק חברים, ובפלפול התלמידים, בישוב, במקרא, במשנה, במעוט סחורה, במעוט דרך ארץ, במעוט תענוג, במעוט שינה, במעוט שיחה, במעוט שחוק, בארך אפים, בלב טוב, באמונת חכמים, ובקבלת היסורין, המכיר את מקומו, והשמח בחלקו, והעושה סיג לדבריו, ואינו מחזיק טובה לעצמו, אהוב, אוהב את המקום, אוהב את הבריות, אוהב את הצדקות, אוהב את המישרים, אוהב את התוכחות, מתרחק מן הכבוד, ולא מגיס לבו בתלמודו, ואינו שמח בהוראה, נושא בעל עם חברו, מכריעו לכף זכות, מעמידו על האמת, ומעמידו על השלום, מתישב לבו בתלמודו, שואל ומשיב, שומע ומוסיף, הלומד על מנת ללמד והלומד על מנת לעשות, המחכים את רבו, והמכון את שמועתו, והאומר דבר בשם אומרו, הא למדת שכל האומר דבר בשם אומרו מביא גאלה לעולם, שנאמר (אסתר ב) ותאמר אסתר למלך בשם מרדכי:"],[6,7,"גדולה תורה שהיא נותנת חיים לעשיה בעולם הזה ובעולם הבא, שנאמר (משלי ד) כי חיים הם למצאיהם ולכל בשרו מרפא. ואומר (שם ג) רפאות תהי לשרך ושקוי לעצמותיך. ואומר (שם ג) עץ חיים היא למחזיקים בה ותמכיה מאשר. ואומר (שם א) כי לוית חן הם לראשך וענקים לגרגרתיך. ואומר (שם ד) תתן לראשך לוית חן עטרת תפארת תמגנך. ואומר (שם ט) כי בי ירבו ימיך ויוסיפו לך שנות חיים. ואומר (שם ג) ארך ימים בימינה בשמאולה עשר וכבוד. ואומר (שם) כי ארך ימים ושנות חיים ושלום יוסיפו לך. ואומר (שם) דרכיה דרכי נעם וכל נתיבותיה שלום:"],[6,8,"רבי שמעון בן יהודה משום רבי שמעון בן יוחאי אומר, הנוי והכח והעשר והכבוד והחכמה והזקנה והשיבה והבנים, נאה לצדיקים ונאה לעולם, שנאמר (שם טז) עטרת תפארת שיבה בדרך צדקה תמצא. ואומר (שם כ) תפארת בחורים כחם והדר זקנים שיבה. ואומר (שם יד) עטרת חכמים עשרם. ואומר (שם יז) עטרת זקנים בני בנים ותפארת בנים אבותם. ואומר (ישעיה כד) וחפרה הלבנה ובושה החמה, כי מלך ה' צבאות בהר ציון ובירושלים ונגד זקניו כבוד. רבי שמעון בן מנסיא אומר, אלו שבע מדות שמנו חכמים לצדיקים, כלם נתקימו ברבי ובבניו:"],[6,9,"אמר רבי יוסי בן קסמא, פעם אחת הייתי מהלך בדרך ופגע בי אדם אחד, ונתן לי שלום, והחזרתי לו שלום. אמר לי, רבי, מאיזה מקום אתה. אמרתי לו, מעיר גדולה של חכמים ושל סופרים אני. אמר לי, רבי, רצונך שתדור עמנו במקומנו, ואני אתן לך אלף אלפים דינרי זהב ואבנים טובות ומרגליות. אמרתי לו, בני, אם אתה נותן לי כל כסף וזהב ואבנים טובות ומרגליות שבעולם, איני דר אלא במקום תורה. ולא עוד, אלא שבשעת פטירתו של אדם אין מלוין לו לאדם לא כסף ולא זהב ולא אבנים טובות ומרגליות, אלא תורה ומעשים טובים בלבד, שנאמר (משלי ו) בהתהלכך תנחה אתך, בשכבך תשמר עליך, והקיצות היא תשיחך. בהתהלכך תנחה אתך, בעולם הזה, בשכבך תשמר עליך, בקבר, והקיצות היא תשיחך, לעולם הבא. וכן כתוב בספר תהלים על ידי דוד מלך ישראל (תהלים קיט), טוב לי תורת פיך מאלפי זהב וכסף. ואומר (חגי ב) לי הכסף ולי הזהב אמר ה' צבאות:"],[6,10,"חמשה קנינים קנה לו הקדוש ברוך הוא בעולמו, ואלו הן, תורה קנין אחד, שמים וארץ קנין אחד, אברהם קנין אחד, ישראל קנין אחד, בית המקדש קנין אחד. תורה מנין, דכתיב (משלי ח), ה' קנני ראשית דרכו קדם מפעליו מאז. שמים וארץ קנין אחד מנין, דכתיב (ישעיה סו), כה אמר ה' השמים כסאי והארץ הדם רגלי אי זה בית אשר תבנו לי ואי זה מקום מנוחתי, ואומר (תהלים קד) מה רבו מעשיך ה' כלם בחכמה עשית מלאה הארץ קנינך. אברהם קנין אחד מנין, דכתיב (בראשית יד), ויברכהו ויאמר ברוך אברם לאל עליון קנה שמים וארץ. ישראל קנין אחד מנין, דכתיב (שמות טו), עד יעבר עמך ה' עד יעבר עם זו קנית, ואומר (תהלים טז) לקדושים אשר בארץ המה ואדירי כל חפצי בם. בית המקדש קנין אחד מנין, דכתיב (שמות טו), מכון לשבתך פעלת ה' מקדש ה' כוננו ידיך. ואומר (תהלים עח) ויביאם אל גבול קדשו הר זה קנתה ימינו:"],[6,11,"כל מה שברא הקדוש ברוך הוא בעולמו, לא בראו אלא לכבודו, שנאמר (ישעיה מג), כל הנקרא בשמי ולכבודי בראתיו יצרתיו אף עשיתיו, ואומר (שמות טו), יהוה ימלך לעלם ועד. רבי חנניא בן עקשיא אומר, רצה הקדוש ברוך הוא לזכות את ישראל, לפיכך הרבה להם תורה ומצות, שנאמר (ישעיה מב) ה' חפץ למען צדקו יגדיל תורה ויאדיר:"]];
+let avotShift=0,avotDay=null;
+function showAvot(){
+  const n=AVOT.length,i=(((dayNo(avotDay,2000,0,1)+avotShift)%n)+n)%n,[c,m,t]=AVOT[i];
+  $('avotQ').textContent=t.replace(/:\s*$/,'');
+  $('avotC').innerHTML=`אבות ${gem(c)}, ${gem(m)} · <a href="https://www.sefaria.org.il/Pirkei_Avot.${c}.${m}?lang=he" target="_blank" rel="noopener">בספריא</a>`;
+}
+
+// Day scores for the month calendar, kept between renders
+const DMC=new Map();
+function dayCached(d,ui,bh,il){
+  const k=`${iso(d)}|${ui}|${bh.day}|${TZ}|${il}`;let v=DMC.get(k);
+  if(!v){const hd=heb(d),ev=events(d,hd,il);v={score:dayModel(d,ui,bh,ev).score,ev,hd};if(DMC.size>600)DMC.clear();DMC.set(k,v);}
+  return v;
+}
+let CALNAV={p:0,n:0};
+
+// ---- world map of the birth chart's lines ----
+// Land: Natural Earth 1:110m (public domain, world-atlas 2.0.2), equirectangular, x = longitude+180, y = 90-latitude.
+const LAND="M112.2 143.8l1.3.7 1.4.2-.4.5-1 0-.5-.3-.3.4-.8.3-1.1-.1-.8-.3-1-.1-1.3-.6-1-.5-1.4-1.2.9.2 1.4.7 1.3.4.5-.5.3-.7 1-.4.7.1.3.5.5.7zM121.5 141.1l.8.4-.3.4-1.4.3-.4-.4-.9.5-.5-.5 1.2-.5.8.2.7-.4zM250.3 139.7l-1.6.1 0-.6.2-.4 0-.2.7.3.9.2.1.2-.3.4zM325.4 130.8l1 .3.5-.1.8-.2.6.1.1 1.2-.4.3-.1.8-.3-.3-.7.7-.2 0-.7-.1-.6-.8-.1-.7-.6-.8 0-.5.7.1zM353 130.9l.2.4.8-.4.2.4 0 .5-.3.4-.7.8-.5.4.4.5-.8 0-.8.3-.3.7-.6 1-.8.5-.5.2-.9 0-.6-.3-1.1-.1-.2-.3.5-.8 1.3-1 .6-.2.8-.3.8-.6.6-.5.5-.7.4-.3.1-.5.7-.5.2.4zM354.6 126.2l.7 1 .1-.7.4.3.2.8.8.3.6.1.6-.4.5.1-.2.9-.3.6-.8-.1-.3.3.1.5-.1.2-.4.5-.5.7-.8.4-.1-.3-.4-.1.5-.8-.3-.6-1.1-.4.1-.4.7-.3.1-.8 0-.6-.4-.7 0-.2-.5-.4-.7-.9-.5-.7.4 0 .6.5.7.3.3.9zM347.1 112.2l-.4.2-.5-.3-.7-.4-.7-.6-.6-.7-.2-.3.5 0 .5.4.5.3.3.3.8.6.5.5zM358.4 107.3l.3.3-.1.6-.7.1-.5-.1-.1-.5.4-.3.4.1.3-.2zM0 106.6l359.4.2-.7.2-.1-.4.5-.2.3 0-359.4-.3.2-.1-.1.5-.1.1zM347.8 106.5l-.3.1-.3-.4 0-.3.6.6zM347.1 104.9l.2.8-.3-.1-.2.1-.1-.3-.1-.8.5.3zM230.1 103.6l.1 1.2.3.4-.1.5-.2.3-.3-.6-.2.3.2.8-.1.4-.3.2-.1.9-.4 1.1-.5 1.4-.6 1.9-.4 1.4-.4 1.1-.8.3-.9.4-.6-.3-.8-.3-.2-.5-.1-.9-.4-.8 0-.7.1-.8.5-.1 0-.4.5-.7.1-.7-.3-.4-.2-.7 0-.9.3-.5.1-.7.5 0 .6-.2.4-.2.4 0 .6-.6.8-.6.3-.5-.1-.4.4.1.5-.7.1-.6.3-.5.3.5.3.4.3.7zM323.6 103.8l.3.7.7-.3.3.4.5.4-.1.4.2.9.1.5.3.1.3.9-.1.5.3.7 1.1.5.7.5.6.4-.1.2.6.7.4 1 .4-.2.4.5.2-.2.2 1.1.7.6.5.4.8.8.2.8.1.5-.1.7.5.8-.1.9-.2.5-.2.9 0 .5-.2.7-.5 1-.7.4-.4.8-.3.5-.3.9-.4.5-.2.7-.2.7.1.3-.6.4-1.1 0-.9.4-.5.4-.6.4-.8-.4-.6-.2.1-.5-.5.2-.9.7-.9-.3-.5-.1-.6-.1-1-.3-.6-.6-.2-.8-.2-.5-.5-.4-1-.1.3-.5-.2-.7-.5.7-.9.2.6-.6.1-.6.4-.5-.1-.7-.8.9-.6.3-.4.8-.8-.4 0-.6-.6-.7-.5-.4.2-.2-1.3-.6-.7 0-1-.5-1.8.1-1.3.3-1.1.4-1-.1-1 .5-.9.3-.2.5-.3.4-.9 0-.6.1-.9-.2-.7.1-.7.1-.6.5-.3 0-.5.2-.5.4-.7-.1-.7 0-1-.6-.6-.2 0-.6.5-.1.2-.2 0-.4.1-.7-.1-.6-.5-1-.2-.6 0-.5-.4-.7 0-.3-.4-.4-.2-.8-.5-.8-.2-.4.5.4-.4-.9.5.3.3.4 0-.5-.5-.8-.1-.3-.2-.3.1-.6.2-.2.1-.5-.1-.6.4-.7.1.7.4-.7.9-.3.4-.4.8-.4.5-.1.2.1.8-.3.6-.1.2-.3.3 0 .5 0 1.1-.3.5-.5.3-.5.5-.5.1-.4 0-.5.7-.9.4.9.5-.2-.4-.5.3-.5.5.2.1-.7.5-.5.3-.4.5-.2 0-.3.4.1 0-.2.5-.1.5-.2.7.5.6.6.6 0 .6.1-.2-.6.5-.8.4-.2-.1-.3.4-.6.6-.3.5.1.9-.2 0-.5-.8-.3.6-.2.6.3.6.4.8.2.3-.1.6.3.6-.2.4 0 .2-.1.5.5-.3.5-.4.4-.3 0 .1.4-.3.5-.4.5.1.3.8.6.8.3.5.3.7.6.3 0 .5.3.2.3.9.3.7-.3.2-.6.2-.4.1-.6.3-.8-.1-.4 0-.3-.1-.6.2-.8.1-.2-.1-.3.2-.5.2-.6 0-.3.4-.3.3.5.1.6.2.1.1.4.3.5.1.6 0 .4zM342.1 100.5l.3.3-.7 0-.4-.6.6.2.2.1zM300.7 100.2l-.4.1-1.3-.7.9-.2.5.3.4.3-.1.2zM340.9 99.9l-.4 0-.6-.1-.3-.2.1-.4.7.2.3.2.2.3zM341.7 99.6l-.2.2-.7-.9-.2-.6.3 0 .4.8.4.5zM304.4 100.1l-.8.3-.1-.2.1-.3.4-.6 1-.4.1-.2.8-.3.7 0 .4-.1.3.1-.3.3-1.1.4-.8.3-.7.7zM297.9 98.1l.4.3.6-.1.2.4-1.1.2-.7.1-.6 0 .4-.5.5-.1.3-.3zM302.9 98.1l-.1.6-1.5.2-1.4-.1 0-.4.8-.2.6.3.7 0 .9-.4zM339.9 98.3l0 .2-.8-.4-.5-.3-.4-.4.2-.1.4.3.8.4.3.3zM337.5 97.3l-.2.1-.4-.2-.4-.4 0-.2.6.4.4.3zM288.6 96.8l1.9.1.3-.4 1.8.4.4.7 1.5.2 1.2.6-1.1.4-1.1-.5-.9.1-1.1-.1-.9-.2-1.2-.4-.7-.1-.4.2-1.8-.4-.2-.5-.9 0 .7-1 1.2.1.8.3.4.1.1.4zM314.7 96.2l-.5.7-.1-.8.2-.3.2-.4.2.3 0 .5zM335.9 96.8l-.3.1-.4-.4-.5-.6-.2-.8.2-.1.1.3.3.3.4.6.5.3-.1.3zM332 95.5l-.5.1-.2.2-.5.3-.6.2-.5 0-.8-.3-.6-.3.1-.3.9.2.5-.1.2-.5.1 0 .1.5.6 0 .3-.4.5-.3-.1-.6.6-.1.2.2 0 .6-.3.6zM307.2 93.5l-.3.3-.7-.2-.2-.4 1-.1.2.4zM310.5 93.1l.3.8-.8-.5-.8 0-.6 0-.7 0 .2-.6 1.3 0 1.1.3zM333.1 94.5l-.3.3-.2-.6-.2-.4-.4-.3-.6-.5-.7-.3.2-.2.6.3.3.2.4.2.4.5.4.3.1.5zM314.1 91.2l.3 1.6 1.1.6.8-1.1 1.1-.6.9 0 .9.4.7.3 1.1.2 1.7.7 1.9.6.7.5.5.5.2.6 1.6.6.3.5-.9.1.2.7.9.6.6 1.1.6 0 0 .4.7.2-.3.2 1.1.4-.1.3-.7.1-.2-.3-.9-.1-1-.2-.8-.6-.5-.6-.6-.8-1.3-.5-.8.3-.6.3.1.8-.8.3-.5-.1-1.1-.1-.9-.8-1-.2-.2.3-1.3 0 .4-.8.7-.3-.3-1.1-.5-.8-1.9-.9-.8 0-1.5-1-.3.5-.4.1-.2-.4 0-.4-.8-.5 1.1-.3.7 0-.1-.3-1.5 0-.4-.6-.9-.2-.4-.5 1.4-.2.5-.3 1.6.4.1.4zM305.2 88.6l-.8 1-.7.2-1-.2-1.6 0-.9.2-.2.7.9.9.6-.4 1.8-.4 0 .5-.5-.2-.4.6-.9.4 1 1.3-.2.3.9 1.2 0 .6-.6.3-.4-.3.5-.8-1 .4-.2-.3.1-.4-.7-.6.1-1-.7.3.1 1.2 0 1.4-.6.2-.4-.3.3-.9-.2-1-.4 0-.3-.7.4-.7.1-.7.5-1.6.2-.4.9-.7.8.3 1.2.1 1.2 0 1-.7.1.2zM308.7 88.9l-.1.8-.5-.1-.1.7.4.5-.3.1-.4-.6-.3-1.3.2-.8.3-.4.1.6.6.1.1.4zM285.8 95.9l-1.1 0-.8-.9-1.3-.8-.4-.6-.8-.8-.5-.7-.8-1.4-.8-.9-.3-.8-.4-.8-.9-.7-.5-.8-.8-.6-1-1.1-.1-.5.6.1 1.6.2.9.9.7.7.6.4.9 1.1 1.1 0 .8.7.6.8.7.5-.4.8.6.4.4 0 .1.7.4.5.7.1.5.7-.2 1.2-.1 1.6zM297.9 88.2l1.1.9-1.2.1-.3.7 0 .9-.9.7-.1 1-.4 1.5-.1-.3-1.1.4-.4-.6-.7-.1-.5-.3-1.2.4-.4-.5-.7 0-.8-.1-.1-1.3-.5-.3-.5-.8-.1-.9.1-.9.6-.7.7.3.8-.2.2-.8.4-.2 1.2-.2.7-.8.5-.6.4-.4.9-.5.7-.7.5-.8.4 0 .5.5.1.4.6.3.9.3-.1.4-.7 0 .2.5-.7.4-.6.9.7.9-.1.5zM306.4 81.6l.1.6 0 .6-.3.9-.4-1-.4.5.3.8-.3.4-1.2-.6-.3-.7.3-.5-.6-.4-.3.4-.5-.1-.7.6-.2-.3.4-.8.6-.3.6-.4.3.5.8-.3.2-.5.7 0-.1-.8.8.5.1.5.1.4zM261.2 83.8l-.9.2-.4-.8-.2-1.4.4-1.6.7.5.5.7.5 1.1-.2 1-.4.3zM119.1 79.9l-.9.1-.2-.1.3-.3 0-.4.6-.1.2 0 0 .8zM304 79.7l-.4.4-.3.6-.3.3-.6-.7.2-.3.2-.3.1-.6.6 0-.2.6.8-.9-.1.9zM298.5 80.7l-1.3.9.5-.7.7-.6.6-.7.5-1 .2.8-.7.6-.5.7zM301.9 78.1l.6.3.6 0 0 .4-.5.5-.6.3 0-.5 0-.5-.1-.5zM305.5 77.8l.3 1.2-.8-.3 0 .3.3.6-.5.3 0-.7-.3-.1-.2-.6.6.1 0-.4-.6-.8.9.1.3.3zM301.5 76.9l-.2.9-.5-.5-.5-.8.9.1.3.3zM301.3 71.5l.6.3.3-.3.1.3-.1.4.3.7-.2.8-.6.4-.2.8.2.8.6.1.4-.1 1.3.5-.1.6.3.2-.1.5-.8-.5-.4-.6-.2.4-.7-.6-.9.2-.5-.3.1-.4.3-.2-.3-.3-.1.4-.5-.6-.2-.4 0-1 .4.4.1-1.6.3-.9.6 0zM114.4 71.8l-.2.2-.8 0-.6.1 0-.5.1-.1.8 0 .5.1.2.2zM103.1 72.1l-.3.2-.6-.2-.5-.3.1-.3.4 0 .2 0 .7.1.5.2.2.3-.7 0zM107.4 70.1l.9.2.1-.2.8 0 .6.3.2 0 .2.3.6 0-.1.3.5 0 .5.4-.4.4-.5-.2-.4 0-.4 0-.1.2-.4 0-.2-.2-.3.1-.4.7-.3-.2 0-.2-.7-.2-.4.1-.7-.1-.4.2-.6-.3.1-.4 1 .2.7.1.4-.3-.5-.4 0-.4-.6-.1.2-.3.6 0zM290.3 71.3l-.8.5-.8-.3-.1-.9.5-.4 1.1-.3.6 0 .2.4-.4.4-.3.6zM24.5 70.9l-.2.2-.2-.2 0-.2-.2-.4.1-.1.1-.2 0-.2 0-.1.1.1.4.1.2.1.1.1.3.4-.4.3-.3.1zM23.9 69.4l-.3 0-.2-.2-.1-.1.1-.1.3.1.3.1-.1.2zM23.2 68.8l0 .1-.5 0 0-.1.5 0zM22.3 68.7l-.1 0-.3 0-.2-.2 0-.1.3-.1.1 0 .2.4zM20.7 68l-.2.1-.3-.2.1 0 .1-.1.2 0 .1.2zM100.3 67.2l.4.4 1-.1.3.2.9.6.6.5.3 0 .6.2-.1.3.8 0 .7.4-.1.2-.7.2-.6 0-.7-.1-1.5.1.7-.5-.4-.3-.6 0-.4-.3-.2-.6-.6 0-.9-.2-.3-.2-1.3-.2-.4-.2.4-.2-1-.1-.7.5-.4 0-.2.3-.4.1-.5-.1.6-.3.2-.4.4-.2.5-.2.8-.1.2-.1.9.1.8 0 .9.3zM102.5 66.2l-.3.1-.2-.6-.4-.3.2-.6.3 0 .4.9 0 .5zM301.2 67.2l-.5.8-.5-.8-.1-.8.6-.9.8-.8.5.3-.2.6-.6 1.6zM102.2 63.4l-1.1.2-.1-.4.5-.1.7.1 0 .2zM103 63.4l-.2.7-.2-.1.1-.5-.5-.4 0-.1.8.4zM314.6 55.9l.2.3-.6.6-.4-.3-.5.2-.3.6-.6-.3 0-.5.5-.6.6.2.4-.5.7.3zM214.6 54.3l-.7.5.1.1 0 .1-1 .4-.5-.1-.2-.4.4 0 .1 0 .1-.3.8 0 .9-.3zM203.7 54.3l.5.3.8 0 .8 0-.1.2.6-.1-.1.3-1.5.1 0-.2-1.2-.2.2-.4zM195.5 51.8l-.3.8.1.3-.2.5-.8-.4-.5-.1-1.4-.5.2-.5 1.1.1 1.1-.1.7-.1zM189.2 48.8l.6.7-.1 1.3-.5 0-.4.3-.4-.3 0-1.2-.2-.6.5.1.5-.3zM321 52.9l-.4.8.2.5-.5.7-1.3.4-1.8.1-1.4 1.1-.7-.3 0-.8-1.8.2-1.1.5-1.2 0 1 .8-.7 1.6-.6.5-.5-.4.2-.9-.6-.3-.4-.7 1-.3.5-.6 1-.6.7-.6 2-.3 1.1.2 1-1.8.7.5 1.5-1 .5-.4.7-1.2-.2-1.2.4-.6 1.1-.2.5 1.4 0 .8-.9 1 0 1.1zM189.6 47.8l-.4.8-.4-.2-.3-.7.2-.3.7-.4.2.8zM323.9 45.8l.7.2.7-.4.2 1.1-1.4.3-.9 1-1.6-.7-.5 1.1-1.1 0-.2-1 .5-.7 1.1-.1.3-1.4.3-.8 1.1 1.1.8.3zM116.3 43.5l.8.1.9 0-.5.4-.4 0-1.2-.4-.3-.3.4-.3.3.5zM118.2 40.9l-.5 0-1.3-.3-.9-.5.3-.1 1.3.3 1.1.4 0 .2zM56.5 41.5l-.5.1-1.7-.4-.3-.4-.8-.3-.2-.3-1.1-.2-.3-.5 0-.3 1.1.2.6.2.9.1.4.4.5.4 1 .4.4.6zM123.9 39.3l-.7.9.7-.3.6.2-.3.3.9.3.4-.3 1 .4-.3.7.7-.2.1.5.4.7-.5.8-.4.1-.7-.2.2-.8-.2-.2-1.2.9-.6 0 .7-.5-1-.2-1 0-2 0-.1-.3.6-.4-.4-.2.8-.6 1-1.6.7-.6.8-.3.5 0-.2.3-.5.6zM47.3 36l1-.1-.4 1.1.9.8-.4 0-.6-.4-.4-.5-.5-.3-.1-.5 0-.3.5.2zM323.6 39.3l1.1 1.7-1.5-.3-.6 1.4.9 1.1 0 .7-.8-.6-.6.7-.2-.8.1-1-.1-1.1.2-.7.1-1.4-.6-.9.1-1.4.9-.5-.4-.4.5-.2.2.7.4 1-.1.9.4 1.1zM173.2 37.7l-1.8.6-1.4-.1.8-1.1-.5-1 1.4-.8.7-.4.9-.1 1 .6-.5.7.2.7-.8.9zM192.7 34.4l-.6.8-1.1-.6-.1-.4 1.5-.3.3.5zM27 32.9l-1 .4-.5-.3-.2-.5.9-.3.6-.2.6.1.5.3-.9.5zM177 31.4l-1.1 1 1-.1 1.1 0-.2.8-.9.9 1 .1 1 1.3.7.1.6 1.2.3.4 1.2.2-.1.6-.6.3.4.5-.9.5-1.3 0-1.7.3-.5-.2-.6.5-.9-.1-.7.3-.6-.2 1.5-1 .9-.2-1.6-.2-.3-.4 1.1-.3-.6-.5.2-.7 1.5.1.2-.6-.7-.6-1.2-.2-.3-.3.4-.4-.3-.3-.6.5 0-1-.6-.5.4-1 .8-.8.8 0 1.2 0zM14.4 30.1l-.6.1-.6-.1-.7-.3 1-.2.8.1.1.4zM100.7 27.8l-.4.6-.4-.1-.3-.3.1-.1.4-.3.4 0 .2.2zM98.1 27.3l-1.2.5-.7 0-.2-.3.8-.4 1.3 0 0 .2zM8.3 26.2l.6.2.6-.1.8.3 1 .1-.1.1-.7.2-.8-.2-.4-.2-.9.1-.2-.1.1-.4zM94.8 24.3l.2.5.5-.2.6.3 1.1.3 1.2.3 0 .5.8-.1.7.4-.9.3-1.5-.3-.6-.4-1 .5-1.4.5-.4-.5-1.3.1.8-.5.2-.8.3-.9.7 0zM165.5 23.5l-.2.7 1.1.7-1.3.7-2.9.7-.9.2-1.3-.1-2.8-.4 1-.4-2.2-.5 1.8-.2 0-.3-2.1-.2.6-.7 1.6-.1 1.5.7 1.5-.6 1.3.3 1.6-.5 1.7 0zM104.1 22.9l-1.1 0-.2-.5.4-.5.9-.2.8.3 0 .4-.1.2-.7.3zM0 21l2.5.8 2.6 1-.1.6.7.3-.3-.8 2.7.2 2 .9-1 .5-1.6.1-.1.9-.4.2-.9 0-.8-.3-1.3-.3-.2-.5-1-.1-1.2.1-.5-.3.2-.4-1.2.2.5.5-.6.4 360 0-1.3.5-1.3-.1.9.5.6.8.5.3.1.4-.3.3-1.8-.2-2.8.7-.9.1-1.6.8-1.4.6-.4.4-1.4-.7-2.6.8-.5-.4-.9.5-1.4-.2-.3.7-1.2 1 .1.4 1.1.2-.1 1.4-1 .1-.4.8.4.4-1.7.6-.4 1.1-1.5.2-.3 1.1-1.4.9-.4-.7-.4-1.5-.6-2.2.5-1.4.9-.6 0-.4 1.6-.3 1.7-1.2 1.8-1 1.8-.8.8-1.5-1.2.1-.6.9-2.6 1.1-.8-1.3-2.6.4-2.5 1.6.8.7-2.2.2-1.5.1 0-.7-1.5-.2-1.3.5-3-.1-3.3.3-3.2 1.9-3.9 2.4 1.6.1.5.6 1 .2.6-.5 1.1.1 1.4 1.1.1.9-.8 1-.1 1.2-.4 1.6-1.5 1.4-.4.7-1.3 1.2-1.4 1.1-.6.6-1.4.6-.6 0-.6-.5-1.4.7-.1.4-.4-.1-.4.4-.3.3 0 .7-.5.2-.2.2-.4.3-.6.2-.5.2 0 .5-.1.1.4.1.6.5.8 1.2.3.6 0 1.2-.4.5-.9.2-.8.4-.9.1-.1-.5.2-.8-.5-1 .8-.2-.7-.8-.5-.2-.1.1-.3.1-.1-.2-.2 0-.3-.2.3-.4.2-.2-.1-.1.3-.6-.1-.2-.6-.1-.4-.2-1.4.3-.8.4-1 .3.5-.5-.2-.4.8-.6-.6-.5-.8.3-1.2.7-.6.6-1 .1-.5.5.6.6.8.2 0 .5.8.2 1.1-.7.9.4.7 0 .1.6-1.4.2-.5.6-.9.5-.5.7 1 .5.4 1 .6.9.7.8 0 .8-.6.2.2.6.6.3-.2.8-.2.8-.6.1-.7 1-.8 1.4-.9 1.2-1.4.9-1.4.8-1.1.1-.6.5-.4-.3-.6.4-1.4.5-1 .2-.4 1.1-.5 0-.3-.7.3-.4-1.4-.3-.5.1-1.3.9-.8.9-.2.7.7 1.1 1 1.3.9.6.6.8.4 1.9-.1 1.7-.8.7-1.2.6-.8.9-1.2.9-.4-.6.3-.7-.8-.6-.8-.1-.4-.6-.5-1-.9-.4-.9 0 .2-.8-.9 0-.1 1.1-.5 1.5-.3.8 0 .8.7 0 .4.9.2.9.5.5.6.2.5.5.3.1.6.6.4.6 0 .7-.1.5.1.3.1.6.4.3.3.9 0 .3-.7.1-.9-.8-1.2-.8-.1-.5-.6-.6-.1-.9-.4-.5.1-.7-.2-.5-.4-.3-.2-.5-.5-.6-.5-.5-.2.6-.2-.5.2-.7.3-.9-.1-.8.3-.7-.4-.6.1-1.1-.4-.5-.3-1.2-.2-1.3-.4-.8-.7.5-1.1.7-.6-.1-.6-.2.3-1.3-.2-.9-.8-1.2.2-.3-.6-.2-.7-.8-.3-.5-.1-.5-.2-.5-.4-.6-.9 0 .1.4-.3.6-.5-.2-.1.1-.3-.1-.4-.1-.1.4-.7 0-1.2.2 0 .8-.5.5-1.4.7-1.2 1.2-.7.6-1 .7 0 .4-.5.3-.9.3-.5.1-.3.8.2 1.3.1.8-.4.9 0 1.7-.6.1-.4.8.3.3-.9.3-.4.6-.4.3-.9-.9-.5-1.4-.4-1-.3-.5-.5-.9-.3-1.3-.2-.6-.9-1.4-.4-1.9-.3-1.3 0-1.2-.2-1-1.4.6-.7-.1-1.3-1.2.4-.4-.3-.3-1.1-.9-.8-.2-.3-.8-.7-.7-1.9.2-1.6 0-1.4.1-1.9-.3-1.1-.2-1.1-.1-.4-1.3-.5-.1-.8.1-1 .5-1.2-.3-1-.8-1-.3-.6-.9-.8-1.3-.5.1-.7-.3-.3.4-.6-.1.2.5-.1.2.3.7.4.9.5.2.2.4.7.4 0 .4-.1.4.1.3.3.3.2.3.1.2-.1-.7.3-.5.3-.1.3.3 0 .6-.2.6.2.4.2-.1 0 .3.8-.2.8 0 .6.1.7-.7.7-.6.7-.7.3-.3.1.1-.1.4-.1.2.1.8.4.7.6.3.7.2.6.1.5.6.2.3.4.2 0 .2-.4.6-.1.3-.4.3-.4.7-.5-.1-.2.3-.1.5.1.6-.1.2-.5 0-.6.3-.1.5-.2.2-.6 0-.4.3 0 .4-.5.3-.6-.1-.6.3-.5 0-.7.3-.2.5 0 .3-1 .4-1.6.5-.9.7-.5.1-.3-.1-.5.4-.7.2-.8.1-.3 0-.2.3-.3 0-.1.3-.5 0-.3.1-.7 0-.3-.6.1-.6-.2-.3-.2-.7-.3-.4.2-.1-.1-.4.1-.2 0-.4-.1-.5-.4-.3 0-.4-.5-.3-.6-.9-.3-.8-.7-.7-.4-.1-.7-1-.1-.7.1-.6-.6-1.1-.5-.4-.5-.2-.3-.6 0-.2-.3-.5-.3-.2-.3-.8-.7-.8-.5-.7-.5 0 .2-.5 0-.4.2-.4-.1-.1-.3.4-.2.8-.2.5-.3.2-.3-.4-.5-.4-.7-1.5-.1.1.4 1.1.6 1 .8 1.6.4.5.3.6.9 1.1-.2.1 0 .7 1.2.9.2.2.3 1-.2.2.1 1 .4 1.2.4.2.5.4.6 1.2.3.9.5.5 1.4.9.5.6.6.6.3.3.5.3.2.3 0 .4-.6.3.4.2.4.2.2.4.4.5.5 0 1-.3 1-.1.9-.3.5-.1.4-.2.5 0 .4 0 .4-.2.6-.1.4-.3.4 0 0 .3-.1.5 0 .6-.2.3-.2 1.1-.5 1.1-.6 1.3-.9 1.5-.9 1.1-1.1 1.3-1 .9-1.5.9-1 .8-1.1 1.2-.2.5-.2.3-.7.4-.3.4-.3.1-.2.7-.3.4-.2.6-.4.4-.5 1.2.1.6.6.3.1.3-.3.6.1.3-.1.5.3.6.5 1 .3.2.2.5-.1 1 .2.8 0 1.6.2.5-.3.7-.4.7-.6.6-1 .4-1.1.5-1.1 1.1-.4.1-.7.8-.4.2-.1.7.5.8.2.5 0 .3.2 0-.1 1-.1.4.2.2-.1.4-.5.4-.8.3-1.2.6-.4.3.1.4.2.1-.1.5-.2.8-.1.8-.3.5-.7.5-.2.1-.4.5-.3.5-.5.7-1.2 1.1-.7.6-.7.4-1.1.4-.5.1-.1.2-.6-.1-.5.2-1.1-.2-.6.1-.4 0-1.1.4-.8.1-.6.4-.5 0-.4-.3-.3-.1-.5-.4 0 .1-.2-.2.1-.6-.4-.7.3-.2 0-.7-.6-1-.5-.8-.8-1.3-.7-.8-.4-.7-.2-1-.3-.7-.3-1.5 0-1.2-.1-.6-.4-.4-.5-.8-.6-1.2-.2-.7-.8-.9-.1-.8-.1-.6.2-.9.3-.9.1-.5.3-.9.2-.4.6-.6.3-.5.1-.7 0-.6-.3-.3-.3-.6-.2-.6 0-.2.3-.4-.3-1-.2-.7-.5-.6.1-.2-.1-.3-.3-.8-.8-1-1-1-.7-.9-.6-1 0-.3.2-.3.3-.8.2-.7-.2-.2.3-1.1.2-.8-.4-.6-.5-.2-.2-.5-.2-.1 0-.3-1 .4-.4-.1-.4.3-.8-.1-.5-.6-.4-.7-.7-.7-.7 0-.9 0-.8.2-.8.2-1.6.6-.6.3-.9.3-.9-.3-.4 0-.7-.2-.6 0-1.2.2-.7.3-1 .4-.2-.1-.3 0-1-.4-.9-.8-.9-.5-.6-.7-.3-.1-.7-.4-.5-.5-.2-.4-.1-.7-.5-.6-.4-.4-.2-.1-.3-.2-.1-.5-.1-.2-.3-.1-.6-.5-.4 0-.2-.3 0-.2-.3-.2-.1-.2-.1-.8.1-.4-.4-.8-.5-.3.4-.2.5-.7.2-.5-.1-.6.3-.5.2-.9-.2-1-.1-.5.1-.5-.2-.5-.6-.4.1-.4 0-.5.4-.3.3-.5 0-.3.3-.7.6-.7.3-.1.3-.6 0-.5.4-.7.6-.3.7-1 .5-.4.9-.1.8-.7.5-.3.8-.8-.2-1.3.4-.8.1-.6.6-.6 1-.5.8-.4.7-1 .3-.7.7 0 .6.5 1-.1 1 .2.4 0 1-.5 1.1-.2.6-.4 1-.3 1.7-.2 1.6-.1.5.2 1-.4 1 0 .4.2.7 0 1.1-.5.7.2 0 .5.8-.4.1.2-.5.5 0 .5.3.2-.1.9-.6.5.1.5.6 0 .2.5.4.2 1.2.3.4-.1.8.2 1.3.4.5.9.9.2 1.4.4 1.1.5.5-.2.5-.5-.3-.8.3-.4.8-.5.6-.1 1.4.2.3.4.4 0 .3.2 1 .1.3.3 1.3 0 1 .3.9.3.5.1.8-.3.4-.3.9-.1.7.2.3.5.2-.4.8.3.8 0 .5-.2.3-.3-.1-.1.3-.5.2-.7.1-.3.4-.8.5-.7-.1-.8.2-.4-.3-.5.4-.4-.6.1-.9-.2-.7.6-1.5.1-.8-.5-1.1-.1-.2.4-.7.2-1-.6-1.1 0-.6-1-.7-.5.5-.8-.6-.5 1.1-.9 1.5-.1.4-.7 1.9.1 1.2-.6 1.2-.3 1.7 0 1.7.7 1.4.4 1.2-.2.9.1 1.2-.5.1-.5-.2-.6-.6-.4-.6-.1-.3-.3-1.3-.9-1.2-.4-.8-.5.7-.2.8-.8-.5-.4 1.4-.4 0-.3-.9.2-.8.1-.6.3-1 .1-.8.3 0 .6.5.3 1-.1-.2.4-1.1.2-1.3.5-.6-.2.2-.4-1-.3.1-.2 1-.4-.3-.2-1.6-.2 0-.4-1 .1-.3.6-.8.7 0 .3-.5.2-.3-.1-.2 1.2-.6.4-.3.7.3.6.1.4.9.3-.2.2-1.2.1-.4.3-.8.5-.4-.4.1-.2-.7-.1-.5 0-1.2.2.7.6-.5.1-.6 0-.5-.5-.2.2.3.6.5.5-.4.2.5.5.5.3 0 .5-.9-.2.3.5-.6.1.4.9-.7 0-.8-.4-.4-.8-.2-.7-.4-.5-.5-.5 0-.3-.2-.1 0-.2-.6-.4-.1-.4.1-.7.1-.3-.1-.2-.2-.1-.3-.3-.5-.2-.9-.3-.6-.4-.9-.3-.8-.7.2-.1-.5-.4 0-.4-.6-.1-.3.4-.3-.3 0-.4.2-.1-.8-.1-.8.3.1.5-.1.3.3.5.9.5.5.8 1.1.8.8 0 .3.3-.3.2.9.3.7.3.9.5.1.2-.2.4-.6-.5-.8-.1-.4.6.7.4-.1.5-.5.1-.5.8-.4.1 0-.3.2-.6.2-.2-.4-.5-.3-.5-.4-.2-.3-.4-.6-.2-.5-.4-.7-.1-.8-.4-.9-.7-.7-.5-.3-1-.5-.1-.8-.4-.5.2-.6.4-.4.1-.9.6-1.9-.3-1.5.3-.1.6 0 .6-.9.7-1.3.2-.1.3-.6.6-.4.8.4.6-.6.4-.2.7-.7.2-.7.7-1.3 0-1 0-.6.4-.4.4-.5-.1-.3-.4-.3-.5-1-.2-.4.3-.5-.2-.5.1.2-.8-.1-.6-.5-.1-.2-.3.1-.7.4-.4 0-.4.2-.6 0-.4-.2-.3 0-.4 0-.7-.4-.4 1.4-.7 1.2.1 1.4 0 1.1.2.8-.1 1.6.1.5-.6.2-2-1-1.1-.8-.5-1.5-.4-.1-.7 1.3-.2 1.7.3-.3-1.2.9.5 2.3-.8.3-.8.9-.2.8-.2.5-.3.9-1.5 1.4-.4.8 0 .2-.2.8 0 .2.2.7-.5-.2-.4-.1-.6-.4-.5 0-1 .2-.3.2-.3.9-.1.4-.2.8-.3-.1.5-.2.3.1.3.5.1-.2.4-.3-.1-.8.7.3.5 0 .4 1 .2 0 .4 1.1-.2.5-.3 1.1.4.5.3.7-.3 1.6-.4 1.2-.4 1 .2.1.3 1 0 .2-.5 1.4-.3-.2-.8 0-.8.5-.6.9-.4.8.8.8 0 .2-.8.1-.6-.3.1-.7-.3-.1-.6 1.3-.3 1.3-.1 1 .2 1.1-.1 1.1-.5-1-.5-1.8.1-1.8.3-1.6.3-.6-.6-1-.3.2-1-.4-.9.4-.6.9-.6 2.3-1.1.7-.2-.1-.4-1.4-.5-1.7.3-1 .7.2.6-1.6.8-2 .9-.7 1.4.7.7 1 .5-.9 1.1-1.1.3-.4 1.7-.5.9-1.2-.1-.6.8-1.2 0-.3-.9-.8-1.1-.8-1.5-.6-.6-2 1.2-1.3.2-1.4-.5-.4-1.1-.3-2.3.9-.6 2.7-.9 1.9-1 1.9-1.4 2.4-1.9 1.6-.8 2.8-1.2 2.2-.5 1.6.1 1.5-.8 1.9 0 1.8-.2 3.1.7-1.3.3 1.1.6 1-.3 1.7.6 2.7.2 3.8 1.2.8.4 0 .7-1.1.5-1.6.3-4.5-.8-.7.2 1.6.7.1 1.5 1.3.3.8.2.1-.4-.6-.5.7-.3 2.4.6.8-.3-.6-.7 2.3-1 .9.1 1 .3.5-.7-.8-.6.5-.6-.7-.6 2.8.4.5.5-1.2.1 0 .6.7.3 1.6-.2.2-.6 2.1-.5 3.5-.9.8.1-1 .6 1.2.1.7-.3 1.9-.1 1.5-.4 1.1.6 1.2-.6-1.1-.6.6-.4 2.9.4 1.4.3 3.6 1.1.7-.5-1-.5-.1-.3-1.2-.1.4-.4-.6-.8 0-.3 1.8-.9.7-.9.7-.2 2.7.2.2.6-1 .8.7.3.3.7-.2 1.4 1.1.6-.5.7-1.9 1.4 1.1.1.4-.3 1.1-.3.3-.5.9-.5-.6-.5.4-.7-1.1-.1-.2-.5.8-1-1.3-.8 1.8-.7-.2-.7.5-.1.5.6-.4 1 1.1.1-.5-.7 1.7-.4 2.1 0 1.8.6-.9-.9-.1-1 1.8-.3 2.4.1 2.1-.1-.8-.6 1.2-.6 1.1 0 2-.5 2.6-.2.3-.2 2.7-.1.8.2 2.2-.5 1.9 0 .2-.5 1-.4 2.4-.4 1.7.3-1.4.3 2.3.1.2.5 1-.2 2.9 0 2.2.5.8.4-.2.5-1.1.3-2.6.5-.8.3 1.2.2 1.5.2.9-.2.5.7.5-.3 1.6-.2 3.2.2.2.5 4.2.1.1-.7 2.1.1 1.6 0 1.6.6.5.6-.6.4 1.2.8 1.6.4 1-1 1.6.4 1.7-.3 1.9.4.7-.3 1.7.1-.8-.9 1.4-.4 9 .6.9.6 2.6.8 4-.2 2 .1.8.4-.1.8 1.2.3 1.4-.2 1.8-.1 1.8.2 1.9-.1 1.8.9 1.2-.3-.8-.7.5-.4 3.1.3 2.1-.1 2.9.5-358.6.4zM229.1 48.7l.5.7.5.1.3.2-.8.1-.2.8-.2.4-.3.2 0 .5.3.7.9.2.7.5 1.5.2 1.5-.3.1-.2-.2-.7.2-1.1-.8-.3.3-.7-.7 0 .2-.9 1 .3.8-.4-.7-.6-.3-.5-.8.2-.1.8-.3-.7-.1-.2.3-.4-.2-.4-1.2-.3-.4-.9-.6-.3 0-.3 1 .1 0-.7.9-.2.8.1.2-.9-.2-.7-1 .1-.8-.2-1.2.4-.9.2-.5.6-.9.2-1 1 .9.9-.1.7 1.1 1.2.5.5zM84.4 20.9l-.7.3-1.3-.3-.8.1-1.4-.4.9-.3.7-.4 1 .2.6.2.3.2.7.4zM0 18.5l360 .7-1.1 0-.2-.3-358.7-.4zM0 18.5l.1-.1.9 0 1.4.3-.1.2-1 .2-1.3.1 0-.7zM89.5 20.5l0 1 1.3-.8 1.2.7-.3.7 1 .7 1-.7.7-.9.1-1.1 1.4.1 1.5.1 1.3.5.1.5-.8.6.7.5-.1.5-1.9.7-1.4.1-1.1-.3-.3.5-.9.9-.3.4-1.2.7-1.4.1-.8.4-.1.6-1.1.2-1.3.8-1 1.1-.4.8-.1 1.2 1.5.1.4 1 .5.7 1.4-.2 1.9.4 1 .4.7.5 1.2.3 1.1.4 1.6.1 1.1.1-.1.8.3 1 .7 1.1 1.5 1 .8-.3.5-1.1-.5-1.5-.7-.6 1.6-.4 1.1-.7.6-.7-.1-.7-.7-.9-1.2-.7 1.2-1.1-.5-.9-.3-1.5.7-.3 1.7.3 1 .1.9-.2.9.3 1.2.6.3.4 1.8 0 0 .9.3 1.2.9.2.7.6 1.5-.6 1-1.1.6-.4.8.9 1.3 1.2 1.1 1.2-.4.7 1.3.5.9.6 1.6.3.7.3.4.8.7.2.4.3.1 1.2-.7.3-.7.4-1.7.3-1.2.9-1.7.1-2.2-.2-1.5 0-1 .1-.8.7-1.3.4-1.5 1.4-1.1.9.8-.2 1.6-1.3 2.1-.8 1.5-.1.9.5-.9.6.3 1.1.3.8 1.3.5 1.7-.2 1-1.1 0 .7.7.4-1.2.6-2.3.6-.9.4-1.2.8-.7-.1-.1-.9 1.8-.8-1.6 0-1.1.2.1.3-1 .5-1.1.3-1 .3-.6.7-.1.1 0 .6.3.5.4 0-.1-.3.3.2-.1.3-.6.1-.5 0-.8.2-.4 0-.6.1-.8.3 1.5-.2.3.2-1.4.3-.7 0 0-.2-.3.3.3.1-.2.7-.7.8-.1-.3-.2 0-.3-.3.2.5.2.2 0 .4-.3.4-.5.8-.1-.1.3-.6-.5-.4-.2-.8-.1.4.2.6-.7-.1.7.3 0 .9.3.1.1.3.2 1-.7.8-1 .3-.7.6-.5 0-.5.4-.1.3-1.1.7-.6.5-.4.6-.2.7.2.7.3.8.5.7 0 .5.4 1.1 0 .7 0 .4-.3.6-.3.1-.5-.1-.1-.4-.4-.3-.5-.8-.5-.8-.2-.4.2-.7-.2-.5-.8-.8-.4-.2-1 .5-.2-.1-.5-.5-.6-.2-1.1.1-.9-.1-.8.1-.4.1.2.3 0 .4.2.2-.2.1-.4-.1-.4.2-.7 0-.7-.6-.9.1-.7-.2-.6.1-.9.2-.9.8-1 .4-.5.5-.3.4 0 .7.1.5.2.3-.4.9-.2.7-.1 1.4-.1.5.2.5.3.5.2.8.7.7.2.6.4.5 1.1.2.4.5.9-.3.7-.1.8-.2.6-.2.6-.4.3-.6 0-.8.2-.3.7-.3 1.1-.2.8 0 .6 0 .3.2 0 .5-.6.5-.2.7.2.1-.2.5-.2.7-.3-.2-.2 0 0 .1.2.1 0 .2-.2.5.1.1-.1.4.1.1-.2.5-.2.2-.1.1-.2.3.3.2.1-.2.3.2.1 0 .2-.2.3 0 .1.1.1 0 .5 0 .5 0 .3-.1.1-.1.3 0 .3.1.2 0 .2-.1.5.1.1.1.3.2.3.2.4.1.3.3-.1.1-.1.2.1.4-.2.3-.1.4-.1.5.1.2 0 .5-.1.1-.1.4 0 .3-.2.2.1.3.1.2.3.5.4.4.5.4.3.4 0 .2.4 0 .1 0 .3.2.5-.1.4-.2.6-.2.3-.3.6 0-.1.1.6.1.4.2.4.3.3.2.6.1.7-.7.4-.1 0-.4.2-.8.6-.5.6 0 .1-.2.8.1.8-.5.4-.3.4-.4.4 0 .3.3-.2.3-.1.3-.5.1.3.4 0 .6-.5.5.4.8.4 0 .3-.8-.4-.3 0-.8 1.2-.4-.1-.4.4-.4.3.7.7.1.7.5 0 .3.9.1 1.1-.1.5.4.8.1.6-.3 0-.2 1.2-.1 1.2 0-.8.3.3.5.8 0 .8.5.1.8.5 0 .4.2.7.4.6.7 0 .5.4 0 .6.5.4.3 1.2.2.1-.2.8 0 1 .2.4.2.7.2 1.1.8.1.4.4 0 .2.6.6 1.7.5.2.1.7-.8.8.3.3 1.8.1 0 1 .8-.6 1.2.3 1.7.7.5.5-.2.6 1.2-.3 1.9.5 1.5 0 1.5.8 1.3 1.1.7.3.9 0 .4.4.3 1.2.2.6-.4 1.7-.5.6-1.4 1.4-.7 1.2-.7.8-.3.1-.3.7.1 1.9-.3 1.5-.1.7-.3.4-.2 1.3-1 1.3-.1 1-.9.5-.2.6-1.1 0-1.5.4-.8.4-1.1.3-1.1.8-.9 1-.1.7.1.6-.2 1-.2.5-.7.5-1.1 1.8-.9.8-.7.4-.4 1-.7.6-.4.6-1.1.6-.8-.2-.5.1-.9-.5-.7.1-.6-.6-.1.5 1.3.9-.2.7.7.4-.1.5-.9 1.3-1.5.5-2 .2-1.1-.1.2.6-.2.8.2.5-.6.3-1.1.2-.9-.4-.4.3.1 1 .7.3.5-.4.3.6-.9.3-.8.6-.1 1-.3.5-.9 0-.8.6-.3.7 1 .7 1 .2-.4.9-1.2.6-.6 1.2-.9.4-.4.4.3 1.1.6.6-.4-.1-.9 0-.4.2-.9.4-.2.9-.4.1-1.2-.4-1.1-.7-1.2-.5-.4-.7.3-.6-.5-.6-.1-1.7.4-1 1.1-.8-1.5-.3.9-.8.3-1.7 1.2.4.5-2.1-.7-.3-.3 1.3-.6-.2.3-1.4.3-1.9.5-.6-.3-1-.1-1.1.4-.1.6-1.6.7-1.6.5-1.5-.3-1.5.3-.8-.1-1.2.6-1.3.2-1.9.3-2.1.3-2.2-.1-1.6-.2-1.5-1-.5-.1-.4-1.9-1-1.8-1.1-.8-.7-.4-.8.1-.3-.8-1.3-1-1.8-.9-2-.4-.5-.4-.7-.7-.7-.8-.4.4-.4-.5-1 .3-.7.8-.6.5-.7-.2-.5-.4.5-.6-.5.2-.2-.1-.9.3-.2.2-.6.4-.7-.1-.4.6-.2.6-.4-.1-.3.4-.1-.1-.5.3-.3.5-.1.4-.6.4-.5-.4-.3.2-.6-.2-.9.2-.2-.2-.9-.4-.5-.3-.3-.2-.6.2-.2-.2-.1-.2-.3-.5-.3-.5.1-.2.3-.4.3-.2 0-.1.2.5.6-.3.1-.1.1-.5.1-.2-.6-.1.2-.3-.1-.2-.4-.4-.1-.3-.1-.4 0 0 .2-.2-.1-.5-.2-.2-.3.1-.1 0-.3-.3-.2-.4-.2-.3-.1-.1-.3-.3-.2.1.3-.2.2-.2-.2-.4-.1-.1-.2 0-.3.1-.4-.2-.1.2-.2-.4-.3-.4-.4-.2-.3-.5-.4-.5-.4.1-.2.2.2.1-.1-.2-.3-.3-.1-.1.3-.6-.1-.3-.1-.5-.2-.5 0-.3-.2-.5-.2-.6 0-.5-.2-.5-.4-1.2-1.1-.5-.3-.8-.3-.6.1-.8.3-.5.1-.7-.2-.7-.2-.9-.5-.8-.1-1.1-.5-.9-.4-.2-.3-.6-.1-1-.3-.4-.4-1.1-.6-.5-.6-.2-.5.3-.1-.1-.3.2-.3 0-.3-.3-.5-.1-.4-.3-.5-.9-1-1-.7-.5-.7-.9-.4-.1-.2.1-.6-.5-.3-.6-.5-.2-.7-.6 0-.6-.6-.4-.5-.1-.3-.5-.7-.4-.8.1-.4-.8-.4-.3.1-.6-.3-.1.4.1.5.1.7.4.4.7.7.2.3.1 0 .2.4.1 0 .2.6.3.3.3.3.6.5.3 1 .3.4.3.5 0 .5.5 0 .4.5.4.4 0 .2-.5.4-.1 0-.3-.6-.7-.6-.7-.5-.5-.2 0-.8-.1-.5-.5-.3-.7-.5-.1.2-.2-.3-.7-.2-.6-.6.1-.1.4.1.4-.4 0-.5-.7-.7-.6-.3-.4-.6-.4-.6-.4-.8-.4-.9-.2-.5-.6-.6-.5-.1-.1-.3-.6-.1-.3-.2-1-.1-.2-.2-.1-.6-1-1-.8-1.4 0-.2-.5-.3-.7-.9-.2-.8-.5-.5.2-.8 0-.9-.3-.8.4-.9.2-1.8-.2-1.4-.3-.8-.3-.5.1-.2 1.5.4.5.9.3-.3-.2-.8-.3-.8-.2 0-1.9-1-.7-.4-1.8-.4-.6-.9.2-.6-1.3-.5-.2-.8-1.2-.7 0-.5-.6-.4-.9-.3-.2-.9-1.3-.8-.6-.9-.9-.1-1.6 0-1.2-.3-2.1-1-.9-.2-1.8-.4-1.4.1-1.9-.5-1.2-.4-1.1.2.2.7-.6.1-1.1.2-.9.3-1.1.2-.2-.5.5-1 1.1-.3-.3-.3-1.3.6-.7.6-1.4.7.7.5-.9.8-1.1.4-1 .3-.3.4-1.5.5-.3.5-1.2.4-.7 0-.9.2-1 .4-.9.3-1.7.3-.1-.2 1.1-.4.9-.3 1.1-.6 1.2-.1.5-.4 1.4-.6.2-.2.8-.4.1-.7.6-.6-1.2.3-.3-.2-.6.4-.6-.5-.3.3-.4-.5-1 .4-.6 0-.1-.6.2-.3-.6-.4-1.3.2-.9-.5-.6-.2-.1-.6-.7-.4.4-.6.8-.5.3-.5.8-.1.7.1.8-.4.8 0 .7-.3-.2-.4-.5-.2.7-.4-.6 0-1.1.2-.3.3-.7-.3-1.5.2-1.4-.3-.4-.4-1.3-.6 1.4-.4 2.2-.5.8 0-.1.5 2.1 0-.8-.6-1.2-.4-.7-.5-1-.4-1.4-.4.6-.5 1.8 0 1.2-.5.3-.5 1-.4 1-.1 1.9-.5.9.1 1.5-.6 1.5.3.8.4.4-.2 1.7.1-.1.2 1.6.2 1-.1 2.1.3 1.9.1.8.1 1.3-.2 1.5.3 1.1.2 1.9.2 1.6.5 1 .1.9-.4 1.2-.3 1.5.1 1.5-.4 1.6-.3.7.4.7-.2.3-.5.7.1 1.6.9 1.4-.7.1.8 1.2-.2.4-.3 1.2.1 1.6.4 2.3.4 1.4.2 1-.1 1.3.5-1.4.5 1.8.2 2.7-.1.9-.2 1 .6 1.1-.5-1-.4.6-.4 1.2 0 .9-.1.8.2 1 .6 1.1-.1 1.7.5 1.6-.2 1.5 0-.2-.6.9-.2 1.6.4 0 .9.6-.8.8 0 .5-1-1.1-.6-1.2-.4.1-1.1 1.2-.7 1.3.1 1 .5 1.4 1.1-.9.5 1.9.2zM65.8 16.9l-.5.4 2.3-.3 1.3.5 1.2-.5.9.4.8.9.5-.4-.7-1 .9-.1 1 .1 1.1.4.6 1 .3.7 1.7.5 1.8.5-.1.4-1.6.1.6.4-.3.3-1.8-.1-1.8-.3-1.1.1-1.9.3-3 .2-1.3.1-.6-.5-1.3-.3-.9.1-1.2-.8.6-.1 1.6-.1 1.4 0 1.3-.2-1.9-.2-2.2.1-1.4 0-.5-.4 2.3-.4-1.6 0-1.7-.3.8-.7.7-.4 2.7-.6 1 .2zM75.5 16.6l-.9.6-1.5-.7.3-.1 1.3 0 .8.2zM103.7 16.9l0 .3-1-.1-1.1 0-1.1.2-.3-.1-1.1-.5.1-.4.4-.1 2.3.1 1.8.6zM93.4 16.8l.8.7.9-.8 2.6-.5 1.7 1.1-.2.6 2-.3 1-.4 2.2.6 1.4.4.1.5 1.9-.3 1 .7 2.4.4.9.4.9.9-1.8.5 2.3.6 1.6.3 1.5.9 1.5 0-.3.7-1.7 1.2-1.2-.4-1.6-1-1.3.1-.1.6 1 .6 1.4.5.4.2.6 1-.3.7-1.3-.2-2.5-.8 1.4.8 1.1.6.1.4-2.7-.4-2.1-.6-1.2-.5.3-.3-1.5-.5-1.4-.5 0 .3-2.9.2-.9-.4.7-.7 1.9 0 2-.2-.3-.3.4-.5 1.2-1-.2-.4-.4-.4-1.5-.5-2.1-.3.7-.2-1.1-.7-.9 0-.8-.4-.5.3-1.8.2-3.6-.3-2.2-.3-1.6-.1-.8-.4 1-.4-1.4 0-.3-1 .8-.9 1-.4 2.6-.3-.8.6zM79.6 16.2l1.2.2 1.8-.2.3.3-1 .5 1.6.4-.2.9-1.7.4-.9-.1-.7-.3-2.5-.8 0-.3 2.1.1-1.1-.7 1.1-.4zM323.6 16.8l-1.5 0-2.1-.1-.1-.1.9-.4 1.3-.1 1.4.4.1.3zM86.8 17.2l-1.1.8-1.1-.1-.6-.8 0-.5.5-.5 1-.2 2.1 0 1.9.2-1.5.9-1.2.2zM59.5 18.6l-2.6.5-.5-.4-2.3-.6.3-.3.8-.8.9-.7-1-.6 3.4-.1 1.4.2 2.5 0 1 .3 1.1.4-1.3.3-2.4.7-1.3.7 0 .4zM330.7 14.9l-1.1.4-1.6-.1-1.9-.4.3-.3 1.8.2 2.5.2zM86.4 15l-.6.4-1.4-.1-1.2-.2.5-.5 1.4-.2.9.3.4.3zM325.1 14.4l-.8.8-3.7 0-1.6.2-2-.7.5-.6 1.3-.2 2.7 0 3.6.5zM81.5 13.3l.8.4 0 .6-.5.7-1.6.1-1.1-.2 0-.5-1.6 0-.1-.7 1.1 0 1.5-.3 1.4 0 .1-.1zM71.8 13.8l.4.4.9-.2 1 0 .2.5-.6.5-3.4.1-2.5.5-1.5 0-.2-.3 2.1-.5-4.5.2-1.4-.2 1.4-1 .9-.3 2.8.4 1.8.6 1.7 0-1.4-.9.9-.4 1 .1.4.5zM237.5 19.3l-.6.1-3.2-.2-.3-.4-1.8-.3-.1-.5 1-.2-.1-.6 2-.8-.9-.2 2.4-.8-.3-.5 2.3-.5 3.3-.7 3.3-.1 1.7-.4 2-.1.7.4-.7.3-3.6.5-3 .4-3.1 1-1.5 1-1.6.9.2.9 1.9.8zM85.3 12.9l1.1.3 2 0 .9.3-.3.4 1.2.3.6.2 1.4 0 1.4.1 1.6-.2 2-.1 1.7.1 1 .4.3.4-.7.2-1.4.3-1.3-.2-2.9.2-2 0-1.7-.1-2.6-.3-.4-.6-.1-.5-1-.4-2.1-.1-1.1-.4.4-.4 2 .1zM63.8 12.4l-.1.7-.8.4-.9 0-1.9.4-1.6.2-1.4-.2 1.7-.8 2.1-.6 1.5 0 1.4-.1zM86.2 12.5l-.5 0-1.9-.1-.2-.2 2 0 .7.2-.1.1zM69.8 12.3l-1.9.3-1.4-.3.8-.4 1.4-.1 1.4.2-.3.3zM204.7 12.1l-2.2.5-1.8-.3.7-.2-.6-.4 2.1-.2.4.4 1.4.2zM70.3 11.4l-1.2.2-1.6 0 0-.2 1-.3.5.1 1.3.2zM84.2 11.9l-1.5.3-.8-.3-.5-.4 0-.4 1.3.1.5 0 1.2.4-.2.3zM79.9 11.7l.4.4-1.6-.1-1.6-.3-2.3-.1 1-.3-1.2-.2-.1-.4 2 .1 2.7.4.7.5zM285.1 11.7l-5.7.4 1.9-1.3.8-.1.7 0 2.6.6-.3.4zM198.3 10.3l3.2.7-2.5.4-.5.8-.9.2-.5.8-1.2 0-2.1-.6.9-.3-1.5-.3-2-.9-.8-.8 2.8-.3.5.3 1.4 0 .4-.3 1.5-.1 1.3.4zM205.4 9.6l2 .3-1.5.6-2.9.1-2.9-.2-.2-.2-1.4-.1-1.1-.4 3.1-.3 1.4.2 1-.3 2.5.3zM231.1 9.5l-1.3.1-.9.1-.1.1-1.2.2-1.1-.2.6-.4-2.3 0 2-.2 1.5 0 .2.3.6-.3.9-.1 1.5.2-.4.2zM279.9 11.1l-2.1.1-2.8-.2-1.7-.4-.8-.7-1.3-.2 2.6-.7 2.1-.3 2 .6 2.3.9-.3.9zM93 10.3l1.2.4-1.4.3-1.8.7-1.8.1-2.1-.1-1.1-.5.1-.3.8-.3-1.9 0-1.1-.3-.6-.5.7-.4.7-.3 1-.1-.4-.2 2.3-.1 1.3.6 1.7.2 1.6.2.8.6zM111.5 6.9l2.7.1 2.1.1 1.8.3 0 .2-2.4.5-2.5.2-.9.2 2.2 0-2.3.6-1.7.3-1.7.8-2 .2-.7.2-3 .1 1.4.1-.7.2.8.5-.9.3-1.6.3-.5.4-1.4.3.2.2 1.7 0 0 .2-2.7.6-2.6-.3-2.9.2-1.5-.1-1.9-.1-.1-.5 1.8-.2-.5-.7.7-.1 2.6.5-1.3-.7-1.7-.2.8-.4 1.8-.2.3-.3-1.4-.4-.4-.6 2.7.1.8.1 1.6-.4-2.3-.1-3.5.1-1.8-.4-.8-.4-1.2-.3-.2-.3 1.5-.2 1.2 0 1.9-.2 1.5-.4 1.2.1 1.1.3.8-.6 1.3-.1 1.8-.1 3-.1.6.1 2.9-.1 2.1 0 2.2.1zM152.9 6.5l6.3.8-1.9.4-3.8 0-5.4.1.5.2 3.5-.1 3.1.3 1.9-.3.8.4-1.1.5 2.6-.3 4.8-.4 3 .2.6.4-4.1.7-.5.3-3.2.1 2.3.1-1.2.7-.8.6 0 1.2 1.2.6-1.5.1-1.7.3 1.9.5.2.9-1.1 0 1.3.9-2.2.1 1.2.4-.4.3-1.4.2-1.4 0 1.3.7 0 .4-2-.4-.5.3 1.4.2 1.3.6.3.8-1.7.2-.8-.4-1.2-.5.3.6-1.2.6 2.7 0 1.4.1-2.7.8-2.7.8-3 .4-1.1 0-1 .4-1.4 1-2.2.7-.6.1-1.4.2-1.4.2-.9.7 0 .7-.5.6-1.6.8.4.8-.5.8-.5 1-1.4.1-1.5-.9-2 0-.9-.5-.7-1-1.7-1.2-.5-.7-.2-.9-1.4-.9.4-.7-.7-.4 1-1.2 1.5-.3.4-.4.2-.8-1.1.3-.6.2-.9.1-1.2-.3-.1-.7.4-.5 1 0 2 .2-1.7-.6-.9-.3-1 .1-.8-.3 1.1-.9-.6-.4-.8-.7-1.2-1-1.3-.4 0-.4-2.7-.6-2.1-.1-2.7.1-2.4 0-1.2-.3-1.7-.6 2.6-.3 2-.1-4.2-.2-2.3-.4.1-.4 3.8-.5 3.7-.5.4-.4-2.7-.3.9-.4 3.4-.7 1.5-.1-.4-.5 2.3-.2 3.1-.2 3.1 0 1.1.3 2.6-.5 2.4.3 1.4.1 2.1.3-2.4-.5.1-.4 3.4-.6 3.5 0 1.3-.3 3.5-.1 8 .1z";
+const PCOL={'שבתאי':'--p0','צדק':'--p1','מאדים':'--p2','חמה':'--p3','נוגה':'--p4','כוכב':'--p5','לבנה':'--p6'};
+const ANG={ac:['עולה','עולה','מורגש באופי שלך ובאיך שרואים אותך'],dc:['שוקע','שוקעת','מורגש בקשרים ובשותפויות'],
+  mc:['באמצע השמיים','באמצע השמיים','מורגש בעבודה ובשם הטוב'],ic:['בתחתית השמיים','בתחתית השמיים','מורגש בבית ובמשפחה']};
+let mapOnly=null,mapKey='';
+const wrap180=x=>((x+540)%360)-180;
+// Where on Earth each body was rising (ac), setting (dc), at the top (mc) or bottom (ic) of the sky at instant t:
+// rising longitude = RA - H - GST, with cos H = -tan(lat)·tan(dec); the meridian lines are at RA - GST.
+function mapLines(t){
+  const gst=AE.SiderealTime(t)*15,rot=AE.Rotation_EQJ_EQD(t);
+  return SEQ.map(name=>{
+    const eq=AE.EquatorFromVector(AE.RotateVector(rot,AE.GeoVector(AEB[P[name].b],t,true))),ra=eq.ra*15,dec=eq.dec;
+    const mc=wrap180(ra-gst),ic=wrap180(mc+180),ac=[],dc=[];
+    for(let lat=-66;lat<=75;lat+=0.5){const c=-Math.tan(lat*rad)*Math.tan(dec*rad);if(Math.abs(c)>1)continue;
+      const H=Math.acos(c)/rad;ac.push([wrap180(ra-H-gst),lat]);dc.push([wrap180(ra+H-gst),lat]);}
+    return{name,ra,dec,mc,ic,ac,dc};
+  });
+}
+const gcKm=(a,b,c,d)=>{const x=Math.sin((c-a)*rad/2)**2+Math.cos(a*rad)*Math.cos(c*rad)*Math.sin((d-b)*rad/2)**2;return 12742*Math.asin(Math.min(1,Math.sqrt(x)));};
+function drawMap(BI,home){
+  const box=$('mapBox');
+  if(!BI){mapKey='';box.innerHTML=`<p class="note" style="margin:0 0 8px">כדי לצייר את המפה צריך את שעת הלידה המדויקת: שעה אחת של טעות מזיזה את הקווים ב־15 מעלות.</p><button type="button" class="ghost" id="mapAdd">הוסף שעת לידה</button>`;
+    $('mapAdd').onclick=()=>{$('editBtn').click();$('btime').focus();};return;}
+  if(!AE){mapKey='';box.innerHTML='<p class="note" style="margin:0">המפה צריכה את ספריית האסטרונומיה, והיא לא נטענה. נסה לרענן את הדף.</p>';return;}
+  const key=`${BI.t.getTime()}|${home[0]}|${mapOnly}`;if(key===mapKey)return;mapKey=key;
+  const L=mapLines(BI.t),X=lo=>(lo+180).toFixed(1),Y=la=>(90-la).toFixed(1);
+  const poly=pts=>{const out=[];let cur=[];pts.forEach(([lo,la],i)=>{if(i&&Math.abs(lo-pts[i-1][0])>180){if(cur.length>1)out.push(cur);cur=[];}cur.push(X(lo)+','+Y(la));});if(cur.length>1)out.push(cur);
+    return out.map(c=>`<polyline points="${c.join(' ')}"/>`).join('');};
+  let g='';for(let lo=-150;lo<=150;lo+=30)g+=`M${X(lo)} 12V153`;for(let la=-60;la<=60;la+=30)g+=`M0 ${Y(la)}H360`;
+  let svg=`<svg viewBox="0 12 360 141" role="img" aria-label="מפת העולם עם הקווים של שבעת הכוכבים ברגע הלידה"><rect class="sea" x="0" y="12" width="360" height="141"/><path class="grat" d="${g}"/><path class="land" d="${LAND}"/>`;
+  L.forEach(l=>{if(mapOnly&&mapOnly!==l.name)return;
+    svg+=`<g class="ln" style="stroke:var(${PCOL[l.name]})"><line class="mc" x1="${X(l.mc)}" y1="12" x2="${X(l.mc)}" y2="153"/><line class="ic" x1="${X(l.ic)}" y1="12" x2="${X(l.ic)}" y2="153"/><g class="ac">${poly(l.ac)}</g><g class="dc">${poly(l.dc)}</g></g>`;});
+  const bc=BI.city;
+  svg+=`<circle class="city" cx="${X(home[2])}" cy="${Y(home[1])}" r="2.2"/>`+(bc[0]!==home[0]?`<circle class="city" cx="${X(bc[2])}" cy="${Y(bc[1])}" r="1.6"/>`:'')+'</svg>';
+  // the lines nearest to the home city
+  const near=[];
+  L.forEach(l=>{
+    const best=(k,pts)=>{let m=1e9;for(const [lo,la] of pts){const d=gcKm(home[1],home[2],la,lo);if(d<m)m=d;}near.push({l,k,km:m});};
+    best('ac',l.ac);best('dc',l.dc);
+    const mer=lo=>{const a=[];for(let la=-66;la<=75;la+=0.5)a.push([lo,la]);return a;};best('mc',mer(l.mc));best('ic',mer(l.ic));});
+  const top=near.filter(x=>x.km<=1000).sort((a,b)=>a.km-b.km).slice(0,3);
+  const kmTxt=k=>k<50?'ממש מעל':`${Math.round(k/10)*10} ק״מ מ`;
+  box.innerHTML=svg+`<div class="pchips" role="group" aria-label="הצג כוכב אחד">${SEQ.map(n=>`<button type="button" class="pchip${mapOnly===n?' on':''}" data-p="${n}" aria-pressed="${mapOnly===n}" style="--c:var(${PCOL[n]})"><i></i>${n}</button>`).join('')}</div>
+    <p class="note" style="margin:8px 0 0">קו מלא: הכוכב עולה. מקווקו: שוקע. עבה: באמצע השמיים. מנוקד: בתחתית השמיים. הנקודה הגדולה היא ${home[0]}${bc[0]!==home[0]?`, הקטנה ${bc[0]}, עיר הלידה`:''}. לחיצה על כוכב מציגה רק אותו.</p>
+    <p class="eyebrow" style="margin:14px 0 4px">הקווים הקרובים ל${home[0]}</p>`+
+    (top.length?`<ul class="maplist">${top.map(x=>`<li style="--c:var(${PCOL[x.l.name]})"><b>${x.l.name} ${ANG[x.k][FEM(x.l.name)?1:0]}</b> <small>(${kmTxt(x.km)}${x.km<50?'':home[0]})</small><br>${P[x.l.name].dom}, ${ANG[x.k][2]}.</li>`).join('')}</ul>`
+      :`<p class="note" style="margin:0">אין קו של כוכב בטווח 1,000 ק״מ מ${home[0]}. השפעת הכוכבים כאן מאוזנת.</p>`);
+}
+
+// ---- share card: today's mazal as an image (downloads capability) ----
+let CARD=null;
+const DL=Promise.resolve({doneText:'התמונה מוכנה.',async save({filename,data}){
+    const f=new File([data],filename,{type:'image/png'});
+    const share=()=>navigator.share({files:[f],title:'כרטיס המזל של היום'}).catch(e=>{throw e&&e.name==='AbortError'?{code:'declined'}:e;});
+    if(!(navigator.canShare&&navigator.canShare({files:[f]}))){const a=document.createElement('a');a.href=URL.createObjectURL(data);a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);return;}
+    try{await share();}catch(e){if(!e||e.name!=='NotAllowedError')throw e;
+      await new Promise((ok,no)=>{const m=$('shareMsg'),b=document.createElement('button');m.textContent='';b.type='button';b.className='btn';b.textContent='התמונה מוכנה. לחץ כאן כדי לשתף';
+        b.onclick=()=>share().then(ok,no);m.append(b);});}}});
+DL.then(d=>{if(d)$('shareRow').hidden=false;}).catch(()=>{});
+async function shareCard(){
+  const msg=$('shareMsg');msg.textContent='מכין תמונה…';
+  try{
+    const dl=await DL;if(!dl){msg.textContent='שמירת קבצים לא זמינה בתצוגה הזו.';return;}
+    try{await Promise.all(['900 120px "Frank Ruhl Libre"','700 56px "Frank Ruhl Libre"','400 36px Rubik','500 36px Rubik','600 36px Rubik'].map(f=>document.fonts.load(f)));}catch(e){}
+    const W=1080,H=1350,cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d'),C=CARD;
+    x.fillStyle='#14213d';x.fillRect(0,0,W,H);
+    let sd=hash(C.iso);const rn=()=>{sd=(Math.imul(sd,1664525)+1013904223)>>>0;return sd/4294967296;};
+    const clear=[[60,180,400],[220,500,150],[500,1080,500],[1230,1300,460]]; // text areas: [top, bottom, half width]
+    for(let i=0;i<260;i++){const sx=rn()*W,sy=rn()*H,a=0.25+rn()*0.6,r=0.8+rn()*1.8;if(clear.some(([t,b,hw])=>sy>t&&sy<b&&Math.abs(sx-W/2)<hw))continue;
+      x.globalAlpha=a;x.fillStyle='#f3e6c4';x.beginPath();x.arc(sx,sy,r,0,2*Math.PI);x.fill();}
+    x.globalAlpha=1;x.direction='rtl';x.textAlign='center';
+    const F='"Frank Ruhl Libre","Times New Roman",serif',R='Rubik,"Arial Hebrew",sans-serif';
+    x.fillStyle='#e0b45a';x.font=`600 34px ${R}`;x.fillText('מזל יומי',W/2,104);
+    x.fillStyle='#c9d2e3';x.font=`400 34px ${R}`;x.fillText(`${C.dh} · יום ${C.dow}`,W/2,156);
+    x.fillStyle='#2c2618';x.beginPath();x.arc(W/2,360,118,0,2*Math.PI);x.fill();
+    x.strokeStyle='#e0b45a';x.lineWidth=5;x.beginPath();x.arc(W/2,360,118,0,2*Math.PI);x.stroke();
+    x.lineWidth=2;x.beginPath();x.arc(W/2,360,104,0,2*Math.PI);x.stroke();
+    x.fillStyle='#e0b45a';x.font=`900 140px ${F}`;x.textBaseline='middle';x.fillText(C.l,W/2,372);x.textBaseline='alphabetic';
+    x.fillStyle='#e7ebf3';x.font=`900 96px ${F}`;x.fillText(`מזל ${C.n}`,W/2,594);
+    let y=594;if(C.name){x.fillStyle='#c9d2e3';x.font=`500 40px ${R}`;y+=60;x.fillText(C.name,W/2,y);}
+    y+=86;x.fillStyle='#e7ebf3';x.font=`600 38px ${R}`;x.fillText(`אנרגיה ${C.lvl}: ${C.score} מתוך 100`,W/2,y);
+    const bw=620,bx=(W-bw)/2;y+=30;x.fillStyle='#22335a';x.fillRect(bx,y,bw,14);
+    x.fillStyle=C.score>=78?'#6cc28d':C.score>=58?'#7fa8e6':C.score>=40?'#9aa5bb':'#e3a35e';x.fillRect(bx+bw*(1-C.score/100),y,bw*C.score/100,14);
+    const lines=(t,max)=>{const w=String(t).split(/\s+/),o=[];let cur='';for(const k of w){const tt=cur?cur+' '+k:k;if(x.measureText(tt).width>max&&cur){o.push(cur);cur=k;}else cur=tt;}if(cur)o.push(cur);return o;};
+    y+=104;x.fillStyle='#e7ebf3';x.font=`700 54px ${F}`;for(const l of lines(C.head,900).slice(0,3)){x.fillText(l,W/2,y);y+=68;}
+    y+=14;x.fillStyle='#c9d2e3';x.font=`400 36px ${R}`;for(const l of lines(C.pers,880).slice(0,4)){x.fillText(l,W/2,y);y+=54;}
+    x.fillStyle='#e0b45a';x.font=`500 29px ${R}`;x.fillText('״אין מזל לישראל״: תפילה, תשובה וצדקה גוברים על כל מזל',W/2,H-72);
+    const blob=await new Promise(r=>cv.toBlob(r,'image/png'));if(!blob)throw{code:'bad_request'};
+    await dl.save({filename:`מזל-יומי-${C.iso}.png`,data:blob});
+    msg.textContent=dl.doneText||'התמונה נשמרה.';
+  }catch(e){const c=e&&e.code;msg.textContent=c==='declined'?'השמירה בוטלה.':c==='rate_limited'?'כבר פתוח חלון שמירה. סיים אותו ונסה שוב.':c==='unavailable'||c==='not_granted'?'שמירת קבצים לא זמינה בתצוגה הזו.':'לא הצלחתי ליצור את התמונה. נסה שוב.';}
+}
+
+function render(){
+  const city=CITIES[birth.city??0],il=city[4]==='IL',BI=birthHour(birth);
+  TZ=city[3];
+  const nc=tzp(new Date()),today=new Date(nc.y,nc.m-1,nc.d,12); // today's date in the city
+  const day=new Date(today);day.setDate(day.getDate()+offset);
+  const Y=day.getFullYear(),Mo=day.getMonth()+1,Dd=day.getDate(),at0=(h,mi=0)=>zt(Y,Mo,Dd,h,mi);
+  const th=heb(today);$('todayHeb').innerHTML=`<b>${th.str}</b>יום ${DOW[today.getDay()].d}`;
+  const b=new Date(birth.date+'T12:00:00');if(birth.sunset)b.setDate(b.getDate()+1);
+  const bh=heb(b),ui=bh.idx,mz=M[ui],dw=DOW[b.getDay()];
+  const dh=heb(day),dayDow=DOW[day.getDay()],ruler=dayDow.p;
+  const r=rng(hash(birth.date+(birth.sunset?'s':'')+iso(day)));
+
+  // sky at noon in the city
+  const {sky,by}=skyOf(at0(12),ui);
+  const moon=by['לבנה'],sun=by['חמה'],elong=norm(moon.lon-sun.lon),illum=Math.round(moonFrac(at0(12),elong)*100);
+  const waxing=dh.day<=15,w=day.getDay();
+
+  $('seal').innerHTML=`<div class="disc"><span>${mz.l}</span><small>${ELEM[mz.e]}</small></div>
+   <div><h2>${birth.name?esc(birth.name)+', ':''}מזל ${mz.n}</h2><p>נולדת ב־${bh.str}, יום ${dw.d}${BI?`, בשעת ${BI.pl}`:''}. חודש ${mz.m}, שבט ${mz.t}.</p></div>`;
+  $('dayLabel').innerHTML=`${offset===0?'היום':offset===1?'מחר':offset===-1?'אתמול':dh.str}<small>${dh.str} · יום ${dayDow.d}</small>`;
+  const ev=events(day,dh,il),chips=[...ev,parashaOf(day,il)].filter(Boolean);$('events').innerHTML=chips.map(e=>`<span>${e}</span>`).join('');$('events').hidden=!chips.length;
+  const holy=!!ev.holy;
+
+  const DM=dayModel(day,ui,bh,ev,{sky,by}),score=DM.score,L=lvlOf(score),lvl=L.n;
+  const others=sky.filter(p=>p.name!=='לבנה');
+  const ranked=[...others].sort((a,c)=>c.score-a.score),best=ranked[0],worst=ranked[ranked.length-1];
+  const head=best.score>=1.5&&worst.score<=-1?`יום של ${P[best.name].dom}, עם צורך בזהירות ב${P[worst.name].dom}`
+    :best.score>=1.5?`יום פתוח ל${P[best.name].dom}`:worst.score<=-1?`יום שדורש ${P[worst.name].dom==='כוח ועשייה'?'שליטה עצמית':'סבלנות וזהירות'}`:`יום מאוזן ושקט`;
+  const phase=dh.day===1||dh.day===30?'ראש חודש, זמן של התחדשות והתחלה.':dh.day<=7?'הלבנה בתחילת מילואה. זמן טוב להתחיל דברים ולשתול זרעים.'
+    :dh.day<=14?'הלבנה גדלה. זמן של צמיחה, וכל מה שתוסיף עכשיו ילך ויגדל.':dh.day<=16?'הלבנה במילואה. שיא החודש, הרגשות מלאים והדברים מתבהרים.'
+    :dh.day<=22?'הלבנה מתמעטת. זמן לסיים, לסגור ולשחרר מה שלא צריך.':'סוף החודש. זמן לחשבון נפש ולהכנה לחודש חדש.';
+  const sunM=M[sun.sign],moonM=M[moon.sign];
+  const pers=pick(mz.f,r,1)[0];
+  const d0=at0(0);
+  const ingress=SEQ.map(n=>{const x=nextIngress(P[n].b,d0,1);return x&&{name:n,...x}}).filter(Boolean);
+  const fem=FEM;
+  const ingTxt=ingress.map(x=>`${fem(x.name)?'ה'+x.name+' עוברת':x.name+' עובר'} למזל ${M[x.to].n} בשעה ${hm(x.t)}`).join('; ');
+
+  // planetary hours (needed by several cards)
+  // with a birth time, "your" planet is the hour's planet (״לאו מזל יום גורם אלא מזל שעה גורם״); otherwise the weekday's
+  const H=hoursOf(day,city),now=Date.now(),mine=BI?BI.pl:dw.p,mineTxt=BI?'כוכב שעת הלידה שלך':'כוכב יום הלידה שלך';
+  const upcoming=list=>{const f=H.day.filter(h=>list.includes(h.pl));return(offset===0?f.find(h=>h.e>now):null)||f[0]||null;};
+  const span=h=>h?`<time dir="ltr">${hm(h.s)}–${hm(h.e)}</time> (שעת ${h.pl})`:'';
+
+  // general forecast, horoscope style
+  const general=`${MOONTXT[moon.sign]} ${moon.sign===ui?'הלבנה עוברת היום במזל שלך, ולכן הרגשות והאינטואיציה שלך חזקים במיוחד.':moon.re.s<0?'הלבנה במצב מאתגר למזלך, אז כדאי לא לקחת דברים ללב.':moon.re.s>0?'הלבנה במזל שמתאים לך, ולכן תרגיש נוח ובטוח יותר.':''} ${pers}`;
+  $('forecast').innerHTML=`<p class="eyebrow">ההורוסקופ היומי · מזל ${mz.n}</p><h3>${head}</h3>
+   <p class="summary">${general}</p>
+   <details class="why"><summary>מה קורה בשמיים היום ולמה</summary>
+   <p><b>הלבנה במזל ${moonM.n}</b>, ${moon.re.t}.</p>
+   ${ingTxt?`<p><b>מעברים היום:</b> ${ingTxt}.</p>`:''}
+   <p><b>${gem(dh.day)} בחודש.</b> ${phase}</p>
+   <p><b>החמה במזל ${sunM.n}</b>, ${sun.re.t}. בתקופה הזו מודגשים ${sunM.traits.join(', ')}. ${sun.re.s>0?P['חמה'].good:sun.re.s<0?P['חמה'].hard:''}</p>
+   <p><b>יום ${dayDow.d}, בשליטת ${ruler}.</b> ${P[ruler].rule}${by[ruler].re.s>0?` ${ruler} עומד היום ${by[ruler].re.t}, ולכן היום הזה עובד לטובתך.`:''}</p>
+   <p><b>${best.name} ${best.re.t}:</b> ${P[best.name].good}${worst.score<0?` <b>${worst.name} ${worst.re.t}:</b> ${P[worst.name].hard}`:''}</p></details>`;
+
+  // quick tiles
+  const lucky=1+((moon.sign+1)*(ui+3)+dh.day*7+w*11+Math.floor(r()*13))%49;
+  const myHour=upcoming([mine]),bestHour=upcoming([best.name]);
+  const compat=moon.re.s>0&&moon.sign!==ui?moon.sign:[(ui+4)%12,(ui+8)%12,(ui+2)%12,(ui+10)%12][dh.day%4];
+  CARD={iso:iso(day),dh:dh.str,dow:dayDow.d,name:birth.name,l:mz.l,n:mz.n,lvl,score,head,pers};
+  $('quick').innerHTML=`
+   <div class="tile"><span class="k">מספר המזל</span><span class="v big">${lucky}</span><small>${gem(lucky)}${lucky===18?' · חי':lucky===26?' · כמניין השם':''}</small></div>
+   <div class="tile"><span class="k">אנרגיה יומית</span><span class="v">${lvl}</span><div class="meter"><i class="${L.c}" style="width:${score}%"></i></div><small>${score} מתוך 100</small></div>
+   <div class="tile"><span class="k">השעה הטובה שלך</span><span class="v t" dir="ltr" style="font-size:1.25rem;text-align:right">${myHour?hm(myHour.s)+'–'+hm(myHour.e):'—'}</span><small>שעת ${mine}, ${mineTxt}${bestHour&&bestHour.pl!==mine?`. גם שעת ${best.name} ב־${hm(bestHour.s)} טובה היום`:''}</small></div>
+   <div class="tile"><span class="k">מזל מתאים היום</span><span class="v">${M[compat].n}</span><small>טוב היום לשיתופי פעולה ולשיחות עם בני מזל ${M[compat].n}</small></div>`;
+
+  // energy hour by hour, what the score is made of, and the scale
+  const hs=DM.hours,mean=a=>a.reduce((t,x)=>t+x.score,0)/a.length,now0=Date.now();
+  const hi=Math.max(...hs.map(x=>x.score)),lo=Math.min(...hs.map(x=>x.score));
+  let bi=0;for(let i=0;i+2<hs.length;i++)if(mean(hs.slice(i,i+3))>mean(hs.slice(bi,bi+3)))bi=i;
+  const mIng=ingress.find(x=>x.name==='לבנה');
+  let hTxt=hi-lo<3?'האנרגיה כמעט קבועה לאורך היום.':`השעות הטובות ביותר היום: <time dir="ltr">${hh(hs[bi].h)}–${hh(hs[bi].h+3)}</time>.`;
+  if(mIng){const bf=hs.filter(x=>x.t<mIng.t),af=hs.filter(x=>x.t>=mIng.t),df=bf.length&&af.length?mean(af)-mean(bf):0;
+    hTxt+=` ב־${hm(mIng.t)} הלבנה עוברת למזל ${M[mIng.to].n}${!bf.length||!af.length?'':Math.abs(df)<3?', והאנרגיה נשארת דומה':df>0?', ומשם האנרגיה עולה':', ומשם האנרגיה יורדת'}.`;}
+  else hTxt+=' הלבנה נשארת היום באותו מזל.';
+  const t6=hs[0].t.getTime(),mPos=mIng&&mIng.t>=t6&&mIng.t<t6+18*3600000?(mIng.t-t6)/(18*3600000):null;
+  const nowI=offset===0?hs.findIndex(x=>now0>=x.t&&now0<x.t.getTime()+3600000):-1;
+  $('hourly').innerHTML=`<p class="hsum">${hTxt}</p><div class="hwrap" role="img" aria-label="ציון האנרגיה לכל שעה מ־06:00 עד 23:00, בין ${lo} ל־${hi}">
+    ${mPos==null?'':`<span class="hmark${mPos<.18?' edge-r':mPos>.82?' edge-l':''}" style="right:${(mPos*100).toFixed(1)}%"><span>הלבנה ל${M[mIng.to].n} ${hm(mIng.t)}</span></span>`}
+    <div class="hbars">${hs.map((x,i)=>`<i class="${lvlOf(x.score).c}${i===nowI?' now':''}" style="height:${Math.round(12+(x.score-20)/77*88)}%" title="${hh(x.h)} · ${x.score}"></i>`).join('')}</div>
+    <div class="hax">${hs.map(x=>`<span>${x.h%3===0?String(x.h).padStart(2,'0'):''}</span>`).join('')}</div></div>`;
+  const sgn=v=>(v>=0?'+':'−')+Math.abs(Math.round(v));
+  const rows=DM.parts.filter(p=>Math.abs(p.v)>=0.5).sort((a,c)=>Math.abs(c.v)-Math.abs(a.v)),maxV=Math.max(11,...rows.map(p=>Math.abs(p.v)));
+  const raw=58+DM.parts.reduce((a,p)=>a+p.v,0);
+  $('breakdown').innerHTML=`<div class="r base"><span>כל יום מתחיל מ־58</span><span></span><span class="v">58</span></div>`
+    +rows.map(p=>`<div class="r"><span>${p.t}</span><span class="tr"><b class="${p.v>=0?'p':'m'}" style="width:${(Math.abs(p.v)/maxV*50).toFixed(1)}%"></b></span><span class="v">${sgn(p.v)}</span></div>`).join('')
+    +`<div class="r tot"><span>הציון של היום${Math.round(raw)!==score?' (הציון נשאר בין 20 ל־97)':''}</span><span></span><span class="v">${score}</span></div>`;
+  $('legend').innerHTML=`<div class="sc"><span class="lv0"></span><span class="lv1"></span><span class="lv2"></span><span class="lv3"></span><i class="pin" style="right:${((score-20)/77*100).toFixed(1)}%" title="היום: ${score}"></i></div>
+    <div class="lb"><span><b>שקטה</b><bdi dir="ltr">20–39</bdi></span><span><b>מאוזנת</b><bdi dir="ltr">40–57</bdi></span><span><b>טובה</b><bdi dir="ltr">58–77</bdi></span><span><b>גבוהה</b><bdi dir="ltr">78–97</bdi></span></div>`;
+
+  // areas
+  const areaPct={};
+  $('areas').innerHTML=AREAS.map(a=>{const v=a.pl.reduce((s,n)=>s+by[n].score,0)/a.pl.length;
+    const pct=Math.max(15,Math.min(95,Math.round(55+v*20))),tier=pct>=68?0:pct>=45?1:2;areaPct[a.n]=pct;
+    const txt=a.t[tier][(dh.day+a.n.length)%2];
+    const pl=a.pl.map(n=>by[n]),key=pl.find(p=>p.ret&&p.name!=='לבנה');
+    const extra=key?` ${key.name} בנסיגה, ולכן עדיף לחזור לדברים ישנים ולא לפתוח חדשים בתחום הזה.`:'';
+    return`<div class="area"><div class="top"><b>${a.n}</b>${stars(pct)}</div>
+     <p>${txt}${extra}</p><small>לפי ${a.pl.map(n=>`${n} ב${M[by[n].sign].n}`).join(', ')}</small></div>`}).join('');
+
+  // do / avoid
+  const goodPl=others.filter(p=>p.score>0).sort((a,c)=>c.score-a.score).slice(0,2);
+  const doL=[...goodPl.map(p=>{const h=upcoming([p.name]);return`${P[p.name].hour.split('.')[0]}${h?`, במיוחד בשעה ${hm(h.s)}`:''}`}),
+    waxing?'להתחיל דברים חדשים: הלבנה במילוי':'לסיים עניינים פתוחים: הלבנה בחסרון',
+    pick(mz.a,r,1)[0]];
+  const dontL=[...others.filter(p=>p.score<0).sort((a,c)=>a.score-c.score).slice(0,2).map(p=>AVOID[p.name]),
+    ...others.filter(p=>p.ret&&p.score>=0).slice(0,1).map(p=>p.name==='כוכב'?'לחתום על חוזים בלי בדיקה כפולה (כוכב בנסיגה)':`לפתוח עניינים חדשים בתחום ה${P[p.name].dom} (${p.name} בנסיגה)`),
+    `${mz.care}: זו נקודת החולשה של מזל ${mz.n}`];
+  if(w===1||w===3)dontL.push(`להתחיל דבר חשוב ביום ${dayDow.d}, לנוהגים להימנע מכך`);
+  if(w===2||w===5)dontL.push(`לצאת יחידי בלילה הקרוב, ליל ${w===2?'רביעי':'שבת'} (פסחים קי״ב)`);
+  if(holy){doL.length=0;doL.push('לימוד תורה ותפילה בכוונה, זה הזמן המיוחד לכך','סעודה ושמחה עם המשפחה והחברים','מנוחה אמיתית לגוף ולנפש',pick(mz.a,r,1)[0]);}
+  $('doList').innerHTML=doL.slice(0,4).map(t=>`<li>${t}</li>`).join('');
+  if(holy){dontL.length=0;dontL.push('דיבורים על עסקים ועבודה','כעס ומריבות, שמקלקלים את הקדושה',`${mz.care}: זו נקודת החולשה של מזל ${mz.n}`);}
+  $('dontList').innerHTML=dontL.slice(0,4).map(t=>`<li>${t}</li>`).join('');
+
+  // week data (shared by planner and week strip)
+  const WK=Array.from({length:7},(_,i)=>{const d=new Date(day);d.setDate(d.getDate()+i);const s2=i===0?{sky,by}:skyOf(zt(d.getFullYear(),d.getMonth()+1,d.getDate(),12,0),ui),hd=heb(d),ev2=i===0?ev:events(d,hd,il);
+    return{d,i,...s2,hd,ev:ev2,w:d.getDay(),holy:ev2.holy};});
+  const actScore=(a,D)=>{let s=a.pl.reduce((t,n)=>t+D.by[n].score,0)/a.pl.length;const why=[],wx=D.hd.day<=15;
+    const bp=a.pl.map(n=>D.by[n]).sort((x,y)=>y.score-x.score)[0];
+    if(bp.re.s>0)why.push(`${bp.name} לטובתך`);else if(bp.re.s<0)why.push(`${bp.name} במצב מאתגר`);
+    if(D.holy){if(!a.holy)return{s:-9,why:[D.holy]};s+=1;why.push(`${D.holy}: זמן מיוחד לזה`);}
+    if(a.begin){if(wx){s+=1;why.push('הלבנה במילוי')}else{s-=0.5;why.push('הלבנה בחסרון')}
+      if(D.w===2){s+=1;why.push('יום ״כי טוב״ כפול')}if(D.w===1||D.w===3){s-=0.5;why.push(`נוהגים לא להתחיל ביום ${DOW[D.w].d}`)}
+      if(D.hd.day===1||D.hd.day===30){s+=0.5;why.push('ראש חודש')}}
+    if(a.end&&!wx){s+=1;why.push('הלבנה בחסרון')}
+    if(a.ret&&D.by[a.ret].ret){s-=1.5;why.push(`${a.ret} בנסיגה`)}
+    if(a.holy&&(D.w===1||D.w===4)){s+=0.5;why.push('שני וחמישי, ימי רצון')}
+    return{s,why};};
+  const dname=D=>D.i===0?(offset===0?'היום':`יום ${DOW[D.w].d}`):D.i===1&&offset===0?'מחר':`יום ${DOW[D.w].d} ${gem(D.hd.day)}`;
+  $('acts').innerHTML=(holy?`<p class="note" style="margin:0 0 6px">היום ${ev.holy}. רוב הפעולות לא שייכות להיום, אז מוצג היום הכי טוב להן בשבוע הקרוב.</p>`:'')+ACTS.map(a=>{
+    const t=actScore(a,WK[0]);const [lab,cl]=t.s<=-9?['לא היום','n']:t.s>=1.2?['מתאים מאוד','g']:t.s>=0?['מתאים','n']:['עדיף לדחות','w'];
+    const h=t.s<=-9?null:upcoming(a.pl);
+    const bestD=WK.map(D=>({D,...actScore(a,D)})).filter(x=>x.s>-9).sort((x,y)=>y.s-x.s)[0];
+    const alt=bestD&&bestD.D.i!==0&&bestD.s>t.s+0.4?` היום הכי טוב השבוע: <time>${dname(bestD.D)}</time>.`:'';
+    return`<div class="act"><b>${a.n}</b><span class="chip ${cl}">${lab}</span><span class="when">${h?`הכי טוב היום: ${span(h)}. `:''}${t.s<=-9||!t.why.length?'':t.why.join(' · ')+'.'}${alt}</span></div>`}).join('');
+
+  // week ahead
+  $('week').innerHTML=WK.map(D=>{const sc=(D.i===0?DM:dayModel(D.d,ui,bh,D.ev,D)).score;
+    const top=D.sky.filter(p=>p.name!=='לבנה').sort((a,c)=>c.score-a.score)[0];
+    return`<button type="button" class="wd${D.i===0?' on':''}" data-o="${offset+D.i}"><span class="dn">${D.i===0&&offset===0?'היום':DSHORT[D.w]}</span><span class="hd">${gem(D.hd.day)}</span>
+     <span class="bar"><i class="${lvlOf(sc).c}" style="height:${sc}%"></i></span><span class="sc">${sc}</span><span class="tip">${D.holy?'שבת/חג':P[top.name].dom.split(' ')[0]}</span></button>`}).join('');
+  document.querySelectorAll('.wd').forEach(bt=>bt.onclick=()=>{offset=+bt.dataset.o;render();window.scrollTo({top:$('dayLabel').getBoundingClientRect().top+scrollY-20,behavior:'smooth'});});
+
+  // month calendar: every day of this Hebrew month, colored by its energy
+  const first=new Date(day);first.setDate(first.getDate()-(dh.day-1));
+  const mdays=[];for(let i=0;i<30;i++){const d=new Date(first);d.setDate(d.getDate()+i);if(i&&heb(d).day===1)break;mdays.push(d);}
+  const dOff=d=>Math.round((d-today)/86400000),special=e=>!/^(שבת קודש|ערב שבת|ספירת העומר|חודש אלול)/.test(e);
+  const pf=new Date(first);pf.setDate(pf.getDate()-1);pf.setDate(pf.getDate()-(heb(pf).day-1));
+  const nf=new Date(first);nf.setDate(nf.getDate()+mdays.length);CALNAV={p:dOff(pf),n:dOff(nf)};
+  $('calT').textContent=`${dh.heName} ${gem(dh.yr%1000)}`;
+  $('cal').innerHTML=DSHORT.map(x=>`<span class="dh">${x}</span>`).join('')+'<span></span>'.repeat(first.getDay())+mdays.map(d=>{
+    const v=dayCached(d,ui,bh,il),o=dOff(d),lv=lvlOf(v.score),sp=v.ev.filter(special);
+    return`<button type="button" class="c${lv.c.slice(2)}${o===offset?' sel':''}${o===0?' td':''}${sp.length?' ev':''}" data-o="${o}" aria-label="${v.hd.str}${o===0?' (היום)':''}: אנרגיה ${lv.n}, ${v.score}${sp.length?'. '+sp[0]:''}"${o===offset?' aria-current="date"':''}>${gem(v.hd.day)}</button>`}).join('');
+
+  // a mishna from Pirkei Avot, a different one each day
+  if(!avotDay||iso(avotDay)!==iso(day))avotShift=0;avotDay=day;showAvot();
+
+  // secrets of the day
+  const cm=M[dh.idx],DY=dafYomi(day),MY=mishnaYomi(day),RY=rambamYomi(day);
+  const curHour=offset===0?[...H.day,...H.night].find(h=>now>=h.s&&now<h.e):null;
+  $('secrets').innerHTML=[
+   ['שיר של יום',`ביום ${dayDow.d} הלויים אמרו בבית המקדש את תהילים ${gem(SHIR[w])} (${SHIR[w]}). קריאתו היום מחברת אותך לעבודת היום.`,'משנה תמיד ז, ד'],
+   ...(DY?[['הדף היומי',`היום לומדים מסכת ${DY.tractate} דף ${gem(DY.daf)}. ${DY.left===0?'היום מסיימים את המסכת.':DY.left===1?'מחר מסיימים את המסכת.':`עוד ${DY.left} ימים לסיום המסכת.`} זה המחזור ה־${DY.cycle} של הדף היומי, וסיום הש״ס שלו יהיה ב־${heb(DY.end).str} (${DY.end.getDate()}.${DY.end.getMonth()+1}.${DY.end.getFullYear()}).${DY.sefaria?` <a href="https://www.sefaria.org.il/${DY.sefaria}.${DY.daf}a?lang=he" target="_blank" rel="noopener">ללמוד את הדף בספריא</a>`:''}`,'תקנת רבי מאיר שפירא מלובלין, ראש השנה תרפ״ד']]:[]),
+   ...(MY?[['משנה יומית',`היום לומדים ${mishnaTxt(MY.list)}. שתי משניות ביום, וכל ששת סדרי משנה נגמרים בקצת פחות משש שנים. הסיום הבא יהיה ב־${heb(MY.end).str} (${fd(MY.end)}). <a href="${mishnaUrl(MY.list)}" target="_blank" rel="noopener">ללמוד בספריא</a>`,'מחזור המשנה היומית, מא׳ בסיוון תש״ז']]:[]),
+   ...(RY?[['רמב״ם יומי',`שלושה פרקים ביום: ${rambamTxt(RY.three)}. במסלול של פרק אחד ביום: ${rambamTxt([RY.one])}. במסלול שלושת הפרקים מסיימים את כל הרמב״ם ב־${heb(RY.end).str} (${fd(RY.end)}). <a href="${rambamUrl(RY.three[0])}" target="_blank" rel="noopener">ללמוד בספריא</a>`,'תקנת הרבי מלובביץ׳, כ״ז בניסן תשמ״ד']]:[]),
+   ['מעשה בראשית של היום',CREATION[w],w===3?'בראשית א; פסחים קי״ב':w===4?'בראשית א; בבא קמא פ״ב':'בראשית א, ב'],
+   [`סוד חודש ${dh.heName}`,`מזל החודש ${cm.n}, שבט ${cm.t}, האות ${cm.l} וחוש ה${cm.s}. העבודה של החודש: ${SENSE[cm.s]}.${cm.n===mz.n?' זה החודש של המזל שלך, זמן של כוח מיוחד בשבילך.':''}`,'ספר יצירה ה; בני יששכר'],
+   [`הסוד של מזל ${mz.n}`,`השבט שלך הוא ${mz.t}, והאבן שלו בחושן היא ה${STONE[mz.t]}. חוש ה${mz.s} הוא הכוח המיוחד שלך: ${SENSE[mz.s]}.`,'שמות כח; ספר יצירה ה'],
+   [`כוכב ${ruler} שולט ביום`,`הגמרא אומרת שמי שנולד בשעת ${ruler} הוא ${P[ruler].gem}. התכונה הזו נמצאת באוויר כל היום, ואפשר לכוון אותה לטוב.${curHour?` עכשיו שעת ${curHour.pl} עד ${hm(curHour.e)}: זמן ל${P[curHour.pl].hour.split('.')[0]}.`:''}`,'שבת קנ״ו ע״א'],
+   ['אין מזל לישראל',w===1||w===4?'ימי שני וחמישי הם ימי רצון: בהם קוראים בתורה, ומשה עלה וירד מהר סיני. זה זמן טוב במיוחד לתפילה ולבקשה.':waxing?'הלבנה גדלה, וכמוה עם ישראל ״עתידים להתחדש כמותה״. כל מה שתוסיף עכשיו בטוב ילך ויגדל.':'הלבנה מתמעטת, אבל היא תמיד חוזרת להתמלא. זה הזמן לשחרר, לסלוח ולהתכונן להתחדשות.',w===1||w===4?'בבא קמא פ״ב ע״א':'נוסח קידוש לבנה; סנהדרין מ״ב']
+  ].map(([t,p,c])=>`<div class="secret"><h4>${t}</h4><p>${p}</p><cite>${c}</cite></div>`).join('');
+
+  $('wheel').innerHTML=wheelSVG(sky,ui);
+  $('planets').innerHTML=`<tr><th>כוכב</th><th>מזל</th><th>מעלה</th><th>ביחס אליך</th></tr>`+sky.map(p=>
+    `<tr><td>${p.name}${p.ret?'<span class="retro">בנסיגה</span>':''}${(x=>x?`<span class="ing">${fem(p.name)?'נכנסת':'נכנס'} ל${M[x.to].n} ב־${hm(x.t)}</span>`:'')(ingress.find(i=>i.name===p.name))}</td><td>${M[p.sign].n}${p.dg?`<span class="dgn ${p.dg.c}">${p.dg.t}</span>`:''}</td><td class="deg">${p.deg}°</td><td><span class="chip ${p.re.c}">${p.re.t.replace('במזל ','').replace('בזווית ','')}</span></td></tr>`).join('');
+  const pts=p=>p.score*K*(p.name==='לבנה'?2:1);
+  $('aspects').innerHTML=sky.filter(p=>p.re.s!==0||p.ret||Math.abs(p.score)>=0.25).sort((a,c)=>Math.abs(pts(c))-Math.abs(pts(a))).map(p=>{
+    const txt=p.re.s>0?P[p.name].good:p.re.s<0?P[p.name].hard:`השפעה מאוזנת בתחום ה${P[p.name].dom}.`;
+    const rt=p.ret?` ${p.name} בנסיגה (נראה כנע לאחור), זמן לחזור, לתקן ולהשלים במקום להתחיל${p.name==='כוכב'?'. בדוק חוזים והודעות פעמיים':''}.`:'';
+    return`<div class="${p.re.s>0?'g':p.re.s<0||p.ret?'w':''}"><b>${p.name} במזל ${M[p.sign].n}</b>, ${p.re.t}. ${txt}${rt}<span class="str ${p.score>0?'g':p.score<0?'w':''}"><b style="width:${Math.min(100,Math.abs(pts(p))/(4*K)*100).toFixed(0)}%"></b></span></div>`}).join('')||'<div>אין היום השפעות חריגות. יום מאוזן.</div>';
+
+  drawMoon(elong);
+  const n0=at0(18),n1=zt(Y,Mo,Dd+1,5,0),ML=moladOf(day,n0);
+  const kl=ML?ML.kl3<n1&&ML.klEnd>n0:dh.day>=3&&dh.day<=15;
+  const when=d=>{const q=tzp(d);return`יום ${DOW[q.w].d} ${q.d}.${q.m}, בשעה ${hm(d)}`};
+  const at=d=>{const q=tzp(d);return q.y===Y&&q.m===Mo&&q.d===Dd?`היום בשעה ${hm(d)}`:`ב${when(d)}`};
+  const mNext=nextIngress('moon',new Date(day.getTime()+1000),3),mRS=moonRiseSet(at0(0),city[1],city[2]);
+  const rsTxt=mRS&&(mRS.rise||mRS.set)?`<p>${[mRS.rise&&`זריחת הלבנה ב${city[0]}: ${hm(mRS.rise)}`,mRS.set&&`שקיעתה: ${hm(mRS.set)}`].filter(Boolean).join(', ')}.</p>`:'';
+  const klTxt=!ML?(kl?`<p>זמן קידוש לבנה${dh.day<7?' (לנוהגים מג׳ בחודש; רבים מחכים לז׳)':''}, עד ט״ו בחודש.</p>`:'')
+    :kl?`<p><b>הלילה אפשר לקדש את הלבנה.</b> ${n0<ML.kl7?`רבים נוהגים לחכות שבעה ימים מהמולד, עד ${when(ML.kl7)}. `:''}הזמן נגמר ב${when(ML.klEnd)}.</p>`
+    :n1<=ML.kl3?`<p>קידוש לבנה אפשר החל מ${when(ML.kl3)}. רבים מחכים עד ${when(ML.kl7)}.</p>`:'';
+  $('moonTxt').innerHTML=`<p><b>${illum}% מואר</b>, ${elong<180?'הלבנה במילוי':'הלבנה בחסרון'}. ${gem(dh.day)} ב${dh.heName}.</p>
+   <p>הלבנה במזל ${moonM.n} (${Math.floor(moon.lon%30)}°), יסוד ה${ELEM[moonM.e]}. ${mNext?`היא תעבור למזל ${M[mNext.to].n} ${at(mNext.t)}.`:'היא עוברת מזל בערך כל יומיים וחצי.'}</p>
+   ${rsTxt}${ML?`<p>${moladText(ML.show)}.</p>`:''}${klTxt}`;
+
+  // planetary hours list
+  const row=h=>`<div class="hr${h.pl===mine?' mine':''}${offset===0&&now>=h.s&&now<h.e?' now':''}"><time>${hm(h.s)}</time><b>${h.pl}</b><span>${P[h.pl].hour}${h.pl===mine?`<span class="tag">★ ${mineTxt}</span>`:''}</span></div>`;
+  $('hoursIntro').textContent=`ב${city[0]}: זריחה ${hm(H.st.rise)}, שקיעה ${hm(H.st.set)}. כל שעה זמנית נמשכת ${Math.round(H.dl/60000)} דקות ביום, והיא בשליטת אחד משבעת הכוכבים לפי הסדר שצ״ם חנכ״ל. השעות המסומנות בזהב שייכות ל${mine}, ${mineTxt}, והן טובות במיוחד בשבילך.`;
+  $('dayHours').innerHTML=H.day.map(row).join('');$('nightHours').innerHTML=H.night.map(row).join('');
+
+  const ch=1+(hash(mz.n+iso(day))%150);
+  const extra=[];
+  if(by['כוכב'].ret)extra.push('לפני שליחת הודעה חשובה, קרא אותה שוב');
+  if(by['צדק'].re.s>0)extra.push('תן צדקה היום, צדק עומד לטובתך');
+  if(by['מאדים'].re.s<0)extra.push('הימנע מוויכוחים, ובמקום זה עשה פעילות גופנית');
+  if(kl)extra.push('אמור קידוש לבנה כשהלבנה נראית');
+  if(day.getDay()===5)extra.push('הכן משהו לכבוד שבת בעצמך');
+  const recs=[...extra.slice(0,2),...pick(mz.a,r,3-Math.min(2,extra.length)),`קרא תהילים פרק ${gem(ch)} (${ch})`];
+  $('recs').innerHTML=recs.map((t,i)=>`<li><b>${i+1}</b><span>${t}</span></li>`).join('');
+
+  $('details').innerHTML=[['חודש',mz.m],['שבט',mz.t],['אות (ספר יצירה)',mz.l],['כוח החודש',mz.s],['יסוד',ELEM[mz.e]],['כוכב יום הלידה',`${dw.p} (יום ${dw.d})`],['לפי חז״ל',dw.x],['מזל השעה (רבי חנינא)',BI?`נולדת בשעה ${hm(BI.t,BI.city[3])}, בשעת ${BI.pl}: ${P[BI.pl].gem}`:'הוסף שעת לידה לפרופיל, ותראה כאן באיזו שעת כוכב נולדת'],...gemName(birth.name)].map(([a,v])=>`<dt>${a}</dt><dd>${v}</dd>`).join('');
+  $('tags').innerHTML=mz.traits.map(t=>`<span>${t}</span>`).join('')+`<span class="care">לשים לב: ${mz.care}</span>`;
+
+  drawMap(BI,city);
+  requestAnimationFrame(paintStars);
+
+  // family: element compatibility of the shown profile with each of the others
+  $('familyP').hidden=!hasProfile||fam.list.length<2;
+  if(!$('familyP').hidden)$('family').innerHTML=fam.list.map((q,i)=>{if(i===fam.active)return'';
+    const o=mzOf(normalize(q)),[cl,lab,txt]=PAIR[[mz.e,o.e].sort().join('+')]||PAIR.same;
+    return`<div><b>${esc(pname(q,i))}: מזל ${o.n}, יסוד ה${ELEM[o.e]}</b><span class="chip ${cl}">${lab}</span><p>${mz.e===o.e?`גם אתם מיסוד ה${ELEM[o.e]}. `:''}${txt}</p></div>`}).join('');
+}
+
+// ---- profiles: the viewer and family members ----
+const RN=(()=>{try{return new Intl.DisplayNames(['he'],{type:'region'})}catch(e){return null}})();
+const cname=cc=>cc==='IL'?'':(RN&&RN.of(cc))||cc;
+const ptz=(()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(e){return''}})();
+const guess=Math.max(0,CITIES.findIndex(c=>c[3]===ptz));
+const cityIdx=n=>CITIES.findIndex(c=>c[0]===n);
+function normalize(p){
+  p=p||{};
+  const b={date:String(p.date||''),sunset:!!p.sunset,name:String(p.name||'').slice(0,40),time:/^\d\d:\d\d$/.test(p.time||'')?p.time:''};
+  let i=-1;if(p.cityName)i=cityIdx(p.cityName);else if(p.city!=null)i=cityIdx(OLD_CITIES[p.city]);
+  b.city=i<0?guess:i;b.cityName=CITIES[b.city][0];
+  const j=p.bcityName?cityIdx(p.bcityName):-1;b.bcity=j<0?b.city:j;b.bcityName=CITIES[b.bcity][0];
+  if(b.time&&b.date){const bi=birthHour(b);if(bi)b.sunset=bi.after;}
+  return b;
+}
+const mzOf=p=>{const b=new Date(p.date+'T12:00:00');if(p.sunset)b.setDate(b.getDate()+1);return M[heb(b).idx];};
+const pname=(p,i)=>p.name||(i===0?'אני':`פרופיל ${i+1}`);
+// two mazalot by their elements (אש, מים, רוח, עפר): chip class, label, text
+const PAIR={
+ 'fire+fire':['g','אותו יסוד','מבינים זה את זה בלי מילים. כדאי לשמור שהלהט של שניכם לא יתלקח בבת אחת.'],
+ 'water+water':['g','אותו יסוד','רגישים ומרגישים זה את זה. כדאי לדבר גם על מה שמרגישים, ולא רק לנחש.'],
+ 'air+air':['g','אותו יסוד','הרבה שיחות ורעיונות משותפים. כדאי שמישהו גם יוריד אותם למעשה.'],
+ 'earth+earth':['g','אותו יסוד','יציבים ונאמנים זה לזה. כדאי להכניס מדי פעם משהו חדש לשגרה.'],
+ 'air+fire':['g','משלימים','הרוח מלבה את האש: אתם מעוררים ומרימים זה את זה.'],
+ 'earth+water':['g','משלימים','המים מצמיחים את העפר: קשר מזין, שקט ויציב.'],
+ 'earth+fire':['n','מאזנים','אחד ממהר ואחד יציב. ביחד יש גם תנופה וגם בסיס.'],
+ 'air+water':['n','מאזנים','מחשבה ורגש. כדאי להקשיב לשפה של השני.'],
+ 'fire+water':['w','דורש סבלנות','הפכים: אש ומים. בסבלנות ובכבוד הדדי הקשר מלמד את שניכם הרבה.'],
+ 'air+earth':['w','דורש סבלנות','רעיונות מול מעשים. מי שחולם ומי שבונה, וביחד אפשר להגשים.']};
+PAIR.same=PAIR['fire+fire'];
+
+// a searchable city field
+const normQ=x=>String(x).replace(/[׳'"״\-־\s.]/g,'').toLowerCase();
+const CQ=CITIES.map(c=>[normQ(c[0]),normQ(cname(c[4]))]);
+function combo(inp,list,onPick){
+  const st={i:0,hits:[],sel:-1};
+  const show=on=>{list.hidden=!on;inp.setAttribute('aria-expanded',String(on));};
+  const draw=()=>{list.innerHTML=st.hits.map((ci,k)=>`<li role="option" id="${list.id}-${k}" data-i="${ci}" aria-selected="${k===st.sel}">${CITIES[ci][0]}<small>${cname(CITIES[ci][4])}</small></li>`).join('');
+    if(st.sel>=0)inp.setAttribute('aria-activedescendant',`${list.id}-${st.sel}`);else inp.removeAttribute('aria-activedescendant');
+    show(st.hits.length>0);};
+  const search=()=>{const q=normQ(inp.value);
+    if(!q||q===normQ(CITIES[st.i][0]))st.hits=CITIES.slice(0,8).map((_,i)=>i);
+    else{const a=[],b=[];CQ.forEach(([n,k],i)=>{if(n.startsWith(q))a.push(i);else if(n.includes(q)||(k&&k.startsWith(q)))b.push(i);});st.hits=[...a,...b].slice(0,8);}
+    st.sel=st.hits.length?0:-1;draw();};
+  const pick=i=>{const ch=i!==st.i;st.i=i;inp.value=CITIES[i][0];show(false);if(onPick&&ch)onPick(i);};
+  inp.addEventListener('input',search);
+  inp.addEventListener('focus',()=>{try{inp.select()}catch(e){}search();});
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(list.hidden){search();return;}if(!st.hits.length)return;st.sel=(st.sel+(e.key==='ArrowDown'?1:-1)+st.hits.length)%st.hits.length;draw();}
+    else if(e.key==='Enter'&&!list.hidden&&st.sel>=0){e.preventDefault();pick(st.hits[st.sel]);}
+    else if(e.key==='Escape'&&!list.hidden){e.preventDefault();show(false);inp.value=CITIES[st.i][0];}});
+  list.addEventListener('mousedown',e=>{const li=e.target.closest('li');if(li){e.preventDefault();pick(+li.dataset.i);}});
+  list.addEventListener('click',e=>{const li=e.target.closest('li');if(li)pick(+li.dataset.i);});
+  inp.addEventListener('blur',()=>setTimeout(()=>{const k=cityIdx(inp.value.trim());if(k>=0)pick(k);else inp.value=CITIES[st.i][0];show(false);},120));
+  return{get i(){return st.i},set(i){st.i=i;inp.value=CITIES[i][0];}};
+}
+
+let hasProfile=false,editing=false,cloud=null,cloudFam=null,delArmed=false,fam={list:[],active:0};
+const cityPick=combo($('city'),$('cityList'),i=>{if(editing!=='new'&&hasProfile){birth.city=i;birth.cityName=CITIES[i][0];render();}});
+const bcityPick=combo($('bcity'),$('bcityList'),()=>hint());
+function hint(){ // with a birth time, "after sunset" is worked out from the birth city's sunset
+  const bi=birthHour({date:$('bdate').value,time:$('btime').value,bcity:bcityPick.i});
+  $('sunset').disabled=!!bi;if(bi)$('sunset').checked=bi.after;
+  $('sunsetHint').textContent=bi?`לפי שעת הלידה: ${bi.after?'אחרי':'לפני'} השקיעה (${hm(bi.set,bi.city[3])} ב${bi.city[0]})`:'';
+}
+['bdate','btime'].forEach(id=>$(id).addEventListener('input',hint));
+function fillForm(p=birth){$('bdate').value=p.date;$('bname').value=p.name;$('btime').value=p.time||'';$('sunset').checked=p.sunset;cityPick.set(p.city);bcityPick.set(p.bcity??p.city);hint();}
+function showProfile(){
+  $('profileBar').hidden=!hasProfile||!!editing;$('form').hidden=hasProfile&&!editing;
+  $('cancelBtn').hidden=!hasProfile;$('sampleNote').hidden=hasProfile;
+  $('delBtn').hidden=!(editing==='edit'&&fam.active>0);delArmed=false;$('delBtn').textContent='מחק';
+  $('formTitle').textContent=editing==='new'?'פרופיל חדש':editing&&fam.active>0?`עריכה: ${pname(fam.list[fam.active],fam.active)}`:'הפרופיל שלך';
+  if(hasProfile){
+    $('ptabs').innerHTML=fam.list.map((q,i)=>`<button type="button" class="ptab${i===fam.active?' on':''}" data-i="${i}" aria-pressed="${i===fam.active}">${esc(pname(q,i))}</button>`).join('');
+    $('ptabs').hidden=fam.list.length<2;
+    const b=new Date(birth.date+'T12:00:00');if(birth.sunset)b.setDate(b.getDate()+1);
+    $('pInfo').textContent=`${fam.list.length<2&&birth.name?`שלום, ${birth.name} · `:''}מזל ${M[heb(b).idx].n} · ${birth.date.split('-').reverse().join('.')}${birth.time?` · ${birth.time}`:''} · ${birth.cityName}`;
+  }
+}
+function famOk(f){return f&&Array.isArray(f.list)&&f.list.some(q=>q&&q.date)?{list:f.list.filter(q=>q&&q.date).slice(0,12),active:0}:null;}
+try{const m=/[#&]p=([A-Za-z0-9_-]+)/.exec(location.hash);
+  if(m&&!localStorage.getItem('mazal-family')){const S=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0))));
+    if(S&&Array.isArray(S.list)&&S.list.some(p=>p&&p.date)){localStorage.setItem('mazal-family',JSON.stringify(S));if(!localStorage.getItem('mazal'))localStorage.setItem('mazal',JSON.stringify(S.list[+S.active||0]));}}}catch(e){}
+function readFam(){try{const f=famOk(JSON.parse(localStorage.getItem('mazal-family')||'null'));if(f){f.active=Math.min(Math.max(0,+JSON.parse(localStorage.getItem('mazal-family')).active||0),f.list.length-1);return f;}}catch(e){}
+  const p=load();return p&&p.date?{list:[p],active:0}:null;}
+function storeFam(){
+  fam.list=fam.list.map(normalize);
+  try{localStorage.setItem('mazal-family',JSON.stringify(fam))}catch(e){}save(fam.list[0]);
+  if(cloudFam)cloudFam.set({list:fam.list,active:fam.active}).catch(()=>{});
+  if(cloud)cloud.set(fam.list[0]).catch(()=>{});
+}
+function applyActive(){birth=normalize(fam.list[fam.active]);editing=false;fillForm();showProfile();render();}
+const f0=readFam();
+if(f0){fam=f0;hasProfile=true;birth=normalize(fam.list[fam.active]);}else birth=normalize({date:'1995-04-12'});
+fillForm();showProfile();
+$('form').addEventListener('submit',e=>{e.preventDefault();if(!$('bdate').value)return;
+  const p=normalize({date:$('bdate').value,time:$('btime').value,sunset:$('sunset').checked,name:$('bname').value.trim(),cityName:CITIES[cityPick.i][0],bcityName:CITIES[bcityPick.i][0]});
+  if(!hasProfile)fam={list:[p],active:0};
+  else if(editing==='new'){fam.list.push(p);fam.active=fam.list.length-1;}
+  else fam.list[fam.active]=p;
+  hasProfile=true;storeFam();offset=0;applyActive();});
+$('editBtn').onclick=()=>{editing='edit';fillForm();showProfile();$('bdate').focus();};
+$('addBtn').onclick=()=>{if(fam.list.length>=12)return;editing='new';fillForm(normalize({cityName:birth.cityName}));showProfile();$('bdate').focus();};
+$('cancelBtn').onclick=()=>{if(hasProfile)applyActive();else{editing=false;showProfile();}};
+$('delBtn').onclick=()=>{ // asks once more inside the page before deleting
+  if(!delArmed){delArmed=true;$('delBtn').textContent=`לחץ שוב כדי למחוק את ${pname(fam.list[fam.active],fam.active)}`;return;}
+  fam.list.splice(fam.active,1);fam.active=0;storeFam();applyActive();};
+$('ptabs').addEventListener('click',e=>{const b=e.target.closest('.ptab');if(!b)return;const i=+b.dataset.i;if(i===fam.active)return;
+  fam.active=i;try{localStorage.setItem('mazal-family',JSON.stringify(fam))}catch(err){}if(cloudFam)cloudFam.set({list:fam.list,active:fam.active}).catch(()=>{});offset=0;applyActive();});
+// sync the profiles to the viewer's private storage so they follow them across devices
+(async()=>{try{
+  if(!window.claude?.use)return;
+  const [db,user]=await Promise.all([claude.use('db'),claude.use('user')]);if(!db||!user)return;
+  const id=await user.id();if(!id)return;
+  const col=db.collection('data/users/'+id);cloud=col.doc('profile');cloudFam=col.doc('family');
+  const [fs,ps]=await Promise.all([cloudFam.get(),cloud.get()]);
+  let remote=null;
+  if(fs.exists){const d=fs.data();remote=famOk(d);if(remote)remote.active=Math.min(Math.max(0,+d.active||0),remote.list.length-1);}
+  else if(ps.exists){const d=ps.data();if(d&&d.date)remote={list:[d],active:0};}
+  if(remote&&!editing){
+    const same=JSON.stringify(remote.list.map(normalize))===JSON.stringify(fam.list.map(normalize));
+    if(!same||remote.active!==fam.active){fam=remote;hasProfile=true;try{localStorage.setItem('mazal-family',JSON.stringify(fam))}catch(e){}save(normalize(fam.list[0]));applyActive();}
+    if(!fs.exists)cloudFam.set({list:fam.list.map(normalize),active:fam.active}).catch(()=>{});
+  }else if(hasProfile&&!remote)storeFam();
+}catch(e){}})();
+$('prev').onclick=()=>{offset--;render()};$('next').onclick=()=>{offset++;render()};
+const toDay=o=>{offset=o;render();window.scrollTo({top:$('dayLabel').getBoundingClientRect().top+scrollY-20,behavior:'smooth'});};
+$('cal').addEventListener('click',e=>{const b=e.target.closest('button[data-o]');if(b)toDay(+b.dataset.o);});
+$('calPrev').onclick=()=>{offset=CALNAV.p;render();};$('calNext').onclick=()=>{offset=CALNAV.n;render();};
+$('avotN').onclick=()=>{avotShift++;showAvot();};
+$('mapBox').addEventListener('click',e=>{const b=e.target.closest('.pchip');if(!b)return;mapOnly=mapOnly===b.dataset.p?null:b.dataset.p;mapKey='';drawMap(birthHour(birth),CITIES[birth.city]);});
+$('shareBtn').onclick=shareCard;
+// quick navigation: jump to a section, and mark the one being read
+const JUMP=[['forecast','תחזית'],['energyP','אנרגיה'],['weekP','השבוע'],['monthP','החודש'],['secretsP','סודות'],['skyBand','שמיים ולבנה'],['hoursP','שעות'],['mapP','מפה']];
+$('jump').innerHTML=JUMP.map(([id,t])=>`<button type="button" data-t="${id}">${t}</button>`).join('');
+$('jump').addEventListener('click',e=>{const b=e.target.closest('button');const el=b&&$(b.dataset.t);if(!el)return;
+  let rm=false;try{rm=matchMedia('(prefers-reduced-motion: reduce)').matches}catch(err){}
+  el.scrollIntoView({behavior:rm?'auto':'smooth',block:'start'});});
+try{const io=new IntersectionObserver(es=>es.forEach(en=>{if(!en.isIntersecting)return;
+    document.querySelectorAll('#jump button').forEach(b=>b.classList.toggle('on',b.dataset.t===en.target.id));
+    const on=document.querySelector('#jump .on'),j=$('jump');if(!on)return;const r=on.getBoundingClientRect(),jr=j.getBoundingClientRect();
+    if(r.left<jr.left||r.right>jr.right)j.scrollBy({left:(r.left+r.right-jr.left-jr.right)/2,behavior:'smooth'});}),{rootMargin:'-80px 0px -65% 0px'});
+  JUMP.forEach(([id])=>{const el=$(id);if(el)io.observe(el);});}catch(e){}
+try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render)}catch(e){}
+render();
+</script>
+
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});</script>
