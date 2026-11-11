@@ -37,6 +37,12 @@
     its body on the horizon or the meridian; land from Natural Earth 1:110m).
   - Design: a night band with stars for the sky and the Moon, a gold callout for the day's recommendations,
     a sticky quick-navigation bar, and a star field behind the page in dark mode.
+  Changes made in Claude Code on 2026-11-11:
+  - The forecast headline is the day's transit, Co-Star style (transitView): a planet now at an angle to a planet in the
+    birth chart (natalOf), exact today. It never repeats yesterday's sentence (headFor). The card shows chips for the
+    planet now, the angle and the birth planet, a do / don't line, and in "why", the peak time and the active range.
+  - Version 1.2: a credit footer at the bottom (#credit), at the owner's request. Keep its version line in step with
+    the iOS/Android version in ~/projects/mazal-yomi-ios.
 -->
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="fonts/fonts.css">
@@ -125,6 +131,11 @@ button{font:inherit;cursor:pointer}
 .tr-dd div{border-top:1px solid var(--line);padding-top:8px;min-width:0}
 .tr-dd b{display:block;font-size:.72rem;letter-spacing:.08em;color:var(--muted);margin-bottom:2px}
 .why .tr-key{border-right:3px solid var(--gold);padding-right:10px}
+.credit{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding:20px 16px 4px;border-top:1px solid var(--line)}
+.credit .mk{font-family:var(--display);color:var(--gold);font-size:1.4rem;line-height:1}
+.credit p{margin:0;font-family:var(--display);font-size:1.08rem;font-weight:500;line-height:1.5;color:var(--ink);text-wrap:balance}
+.credit b{color:var(--gold);font-weight:700}
+.credit small{font-size:.75rem;color:var(--muted);letter-spacing:.04em}
 .duo2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .dolist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
 .dolist li{padding-right:20px;position:relative}
@@ -421,6 +432,12 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   <section class="panel" id="familyP" hidden><p class="eyebrow">התאמה במשפחה, לפי היסודות</p><div class="fam" id="family"></div></section>
 
   <p class="note">המזל שלך נקבע לפי החודש העברי שבו נולדת, על פי ספר יצירה. מיקומי הכוכבים וזמני המעבר בין המזלות מחושבים לכל יום בספריית Astronomy Engine, והמזלות נמדדים כמו אצל הרמב״ם (הלכות קידוש החודש). החגים, פרשת השבוע, המולד, זמן קידוש לבנה והזריחה והשקיעה מחושבים בספריית Hebcal, לפי ארץ ישראל או לפי חו״ל בהתאם לעיר שבחרת. שעות הכוכבים וסגולות יום הלידה לקוחים מגמרא שבת קנ״ו. היום העברי מתחיל בשקיעה, ולכן חשוב לסמן אם נולדת אחרי השקיעה, או פשוט להזין את שעת הלידה. חז״ל לימדו ש״אין מזל לישראל״: תפילה, תשובה וצדקה גוברים על כל מזל. התחזית נועדה להשראה ולמחשבה טובה.</p>
+
+  <footer class="credit" id="credit">
+    <span class="mk" aria-hidden="true">✦</span>
+    <p>האפליקציה נוצרה על ידי <b>אבירן</b>, בעזרת בינה מלאכותית</p>
+    <small>מזל יומי · גרסה 1.2</small>
+  </footer>
 </div>
 
 <style>
