@@ -118,6 +118,13 @@ button{font:inherit;cursor:pointer}
 .summary{font-size:1.02rem;margin:0 0 4px}
 .why summary{margin-top:6px}
 .why p{font-size:.92rem;margin:10px 0 0}
+.tr-eq{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 12px;font-size:.8rem}
+.tr-eq span{background:var(--techelet-soft);color:var(--techelet);border-radius:999px;padding:3px 10px;font-weight:600}
+.tr-eq i{font-style:normal;color:var(--gold);font-weight:600}
+.tr-dd{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 2px;font-size:.9rem}
+.tr-dd div{border-top:1px solid var(--line);padding-top:8px;min-width:0}
+.tr-dd b{display:block;font-size:.72rem;letter-spacing:.08em;color:var(--muted);margin-bottom:2px}
+.why .tr-key{border-right:3px solid var(--gold);padding-right:10px}
 .duo2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .dolist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:.92rem}
 .dolist li{padding-right:20px;position:relative}
@@ -1034,6 +1041,134 @@ async function shareCard(){
   }catch(e){const c=e&&e.code;msg.textContent=c==='declined'?'השמירה בוטלה.':c==='rate_limited'?'כבר פתוח חלון שמירה. סיים אותו ונסה שוב.':c==='unavailable'||c==='not_granted'?'שמירת קבצים לא זמינה בתצוגה הזו.':'לא הצלחתי ליצור את התמונה. נסה שוב.';}
 }
 
+// ── The day's transit, Co-Star style ──
+// Co-Star's own tutorial (read from its Android app, 2026-11) says the daily horoscope is built from "transits": the angle
+// between where a planet is NOW ("the vibe right now") and where a planet was at your BIRTH ("the part of you impacted");
+// the angle is "the relationship between the two". Here: the 7 planets of שצ״ם חנכ״ל and 5 angles. The headline is the
+// transit that becomes exact today (fast planets first, then the Moon), so it changes every day.
+const ASP=[
+ {a:0,n:'צמידות',k:'c',o:1,w:1,nn:'מפגש',x:'0°, שני הכוחות באותה נקודה ומעצימים זה את זה'},
+ {a:60,n:'ששית',k:'h',o:.7,w:.6,nn:'פתח קטן',x:'60°, הזדמנות קטנה שעובדת רק אם עושים צעד'},
+ {a:90,n:'ריבוע',k:'q',o:.9,w:.9,nn:'חיכוך',x:'90°, חיכוך שמכריח לזוז ולשנות משהו'},
+ {a:120,n:'משולש',k:'h',o:.9,w:.8,nn:'זרימה',x:'120°, זרימה קלה וטבעית, כמו רוח גבית'},
+ {a:180,n:'ניגוד',k:'o',o:1,w:.9,nn:'מתח של מראה',x:'180°, מראה: מה שקורה בחוץ משקף משהו בפנים'}
+];
+const TRO={'לבנה':6,'חמה':3,'כוכב':3,'נוגה':3,'מאדים':2.5,'צדק':1.5,'שבתאי':1.5}; // orb in degrees, times the angle's factor
+const TRW={'לבנה':1,'חמה':.9,'כוכב':.85,'נוגה':.9,'מאדים':.95,'צדק':.8,'שבתאי':.85}; // weight of the planet now
+const NAW={'חמה':1,'לבנה':1,'כוכב':.8,'נוגה':.85,'מאדים':.85,'צדק':.65,'שבתאי':.7}; // weight of the birth planet
+const TRSTEP={'לבנה':.5,'חמה':6,'כוכב':4,'נוגה':4,'מאדים':12,'צדק':24,'שבתאי':24}; // hours, to find when it starts and ends
+const NOW={'לבנה':'מצב הרוח הכללי','חמה':'האור של התקופה','כוכב':'המחשבות והשיחות שבאוויר','נוגה':'החיבה, היופי והכסף שבאוויר','מאדים':'הדחף והחיפזון שבאוויר','צדק':'השפע וההתרחבות של התקופה','שבתאי':'הלחץ והאחריות של התקופה'};
+const YOU={'חמה':'מי שאתה ואיך אתה רוצה להיראות','לבנה':'הצרכים הרגשיים שלך ומה שנותן לך ביטחון','כוכב':'הדרך שבה אתה חושב ומדבר','נוגה':'הדרך שבה אתה אוהב, נהנה ומתייחס לכסף','מאדים':'הדרך שבה אתה פועל, נלחם ומתעצבן','צדק':'האמונה, התקווה והנדיבות שלך','שבתאי':'הפחדים, המשמעת והגבולות שלך'};
+// headline bank: birth planet → kind of angle (c meeting, h flowing, q square, o opposition) → 3 sentences
+const HEADS={
+ 'חמה':{c:['היום אתה במרכז, גם אם לא ביקשת.','מה שאתה מרגיש היום הוא אתה, בלי מסננים.','זה יום להיות בדיוק מי שאתה.'],
+  h:['קל לך היום להיות עצמך. תנצל את זה.','אנשים רואים אותך היום כמו שאתה רוצה שיראו.','הביטחון שלך עובד היום בלי מאמץ.'],
+  q:['לא כל אתגר הוא מתקפה על מי שאתה.','משהו היום ינסה לשנות אותך. תבחר מה להשאיר.','אתה לא חייב להוכיח כלום היום.'],
+  o:['מישהו היום יראה לך את עצמך מהצד השני.','מה שמעצבן אותך באחרים מספר משהו עליך.','יש גם צד אחר לסיפור שלך.']},
+ 'לבנה':{c:['הרגשות שלך היום חזקים מהרגיל. תקשיב להם.','היום מותר לך להרגיש הכול.','הלב שלך יודע משהו שהראש עוד לא הבין.'],
+  h:['תעשה היום משהו שנותן לך תחושת בית.','רוך כלפי עצמך הוא לא חולשה.','קל לך היום לבקש את מה שאתה צריך.'],
+  q:['מצב רוח הוא לא עובדה.','לא כל תחושה צריכה תגובה מיידית.','אתה צריך יותר מנוחה ממה שאתה מודה.'],
+  o:['הצרכים שלך והצרכים של אחרים מושכים היום לכיוונים שונים.','מישהו קרוב משקף לך היום רגש שהדחקת.','לא חייבים לבחור בין עצמך לבין אחרים.']},
+ 'כוכב':{c:['הראש שלך מלא היום. תרשום הכול.','המילים שלך היום שוקלות יותר.','רעיון טוב יגיע היום ממקום לא צפוי.'],
+  h:['תגיד את זה. היום זה ייצא נכון.','שיחה אחת היום יכולה לסדר הרבה.','הראש צלול. זה זמן להחליט.'],
+  q:['תקרא את ההודעה פעמיים לפני שאתה שולח.','לא כל מחשבה צריכה להיאמר בקול.','אי־הבנה קטנה היא לא סוף העולם.'],
+  o:['תקשיב יותר ממה שאתה מדבר.','אולי שניכם צודקים.','הוויכוח של היום הוא בעצם על משהו אחר.']},
+ 'נוגה':{c:['תן לעצמך היום משהו יפה.','אתה מושך היום יותר ממה שאתה חושב.','הלב פתוח היום. שים לב למי אתה נותן להיכנס.'],
+  h:['מחמאה קטנה תפתח היום דלת גדולה.','הנאה פשוטה היא כל מה שצריך היום.','החן שלך עובד היום בשבילך.'],
+  q:['לא כל רצון צריך להתממש מיד.','הארנק והלב שלך צריכים היום גבולות.','אתה לא צריך לקנות אהבה, גם לא מעצמך.'],
+  o:['מה שאתה רוצה ממישהו אחר, תנסה לתת לעצמך.','מערכת יחסים מבקשת היום איזון.','משיכה היא לא תמיד התאמה.']},
+ 'מאדים':{c:['יש לך היום כוח לשבור קירות. תבחר איזה קיר.','תתחיל את זה היום.','הכוח שלך גדול היום. תכוון אותו.'],
+  h:['תפעל. עכשיו זה יעבוד.','האומץ שלך משתלם היום.','הגוף שלך רוצה לזוז. תן לו.'],
+  q:['אל תריב על דברים קטנים.','כעס הוא דלק, לא הגה.','חיפזון היום עולה ביוקר.'],
+  o:['מישהו ינסה היום למשוך אותך לעימות. אתה לא חייב להיכנס.','לא כל תחרות שווה ניצחון.','הכוח האמיתי היום הוא לוותר.']},
+ 'צדק':{c:['היום טוב לבקש בגדול.','האמונה שלך היא הנכס הכי חזק שלך.','דלת נפתחת. תעבור בה.'],
+  h:['נדיבות תחזור אליך היום.','מזל קטן מחכה לך היום. שים לב אליו.','תלמד היום משהו חדש.'],
+  q:['יותר זה לא תמיד טוב יותר.','אל תבטיח היום יותר ממה שאתה יכול לקיים.','אופטימיות בלי תוכנית היא רק משאלה.'],
+  o:['מישהו אחר מאמין היום במשהו אחר. זה בסדר.','אל תטיף. תקשיב.','ההגזמה של אחרים לא חייבת להפוך לשלך.']},
+ 'שבתאי':{c:['מה שתבנה היום יחזיק שנים.','הפחד שלך הוא מורה, לא שופט.','זה יום לקחת אחריות.'],
+  h:['משמעת היום תרגיש כמו חופש.','הצעד הקטן והמשעמם הוא הנכון.','סבלנות משתלמת היום.'],
+  q:['אתה לא חייב לסחוב הכול לבד.','עיכוב הוא לא כישלון.','הלחץ של היום יעבור. מה שתלמד ממנו יישאר.'],
+  o:['מישהו יציב לך היום גבול. תכבד אותו.','הסמכות שמולך היא לא האויב.','מה שמגביל אותך היום גם שומר עליך.']}
+};
+// "Do / Don't", Co-Star style: birth planet → [do, don't]; two of each are drawn per day
+const DD={
+ 'חמה':[['להופיע','להוביל','לבחור בעצמך','אור שמש'],['להתנצל על מי שאתה','לחפש אישור','להתכווץ','לרצות את כולם']],
+ 'לבנה':[['בית','אוכל חם','להתקשר להורים','לישון מוקדם'],['להחליט מתוך עלבון','לבלוע רגשות','גלילה בלילה','ריבים משפחתיים']],
+ 'כוכב':[['לרשום','לשאול שאלות','לקרוא','שיחה אחת חשובה'],['לשלוח בכעס','רכילות','לחתום בלי לקרוא','להניח הנחות']],
+ 'נוגה':[['פרחים','מחמאות','מוזיקה','להתלבש יפה'],['קניות מתוך שעמום','לקנא','לרדוף אחרי מי שלא רודף','להתפשר על מה שחשוב לך']],
+ 'מאדים':[['ספורט','להתחיל פרויקט','להגיד לא','עבודה בידיים'],['לנהוג בעצבים','מריבות ברשת','לנקום','לפעול מתוך כעס']],
+ 'צדק':[['צדקה','ללמוד','לתכנן נסיעה','לברך'],['להבטיח','להגזים','הימורים','להטיף']],
+ 'שבתאי':[['לסגור משימות','לתכנן','לסדר מגירה','לכבד גבולות'],['להאשים את עצמך','לדחות שוב','לוותר','לסחוב לבד']]
+};
+const sd=(l,x)=>((l-x)%360+540)%360-180; // signed degrees from x to l, -180..180
+const NATAL={};
+// the planets at birth; without a birth time, 12:00 (21:00 if born after sunset) in the birth city
+function natalOf(b){
+  const k=[b.date,b.time||'',b.sunset?1:0,b.bcity??b.city].join('|');if(NATAL[k])return NATAL[k];
+  const c=CITIES[b.bcity??b.city]||CITIES[0],[y,m,d]=b.date.split('-').map(Number);
+  let h=b.sunset?21:12,mi=0;
+  if(b.time){const q=b.time.split(':').map(Number);if(!isNaN(q[0])){h=q[0];mi=q[1]||0;}}
+  const t=zt(y,m,d,h,mi,c[3]);
+  return NATAL[k]=Object.fromEntries(SEQ.map(n=>[n,lonOf(P[n].b,t)]));
+}
+// every transit within orb during this city day, strongest first; "ex" = it becomes exact today
+function transitsOf(day,nat){
+  const y=day.getFullYear(),m=day.getMonth()+1,d=day.getDate(),t0=zt(y,m,d,0,0),t1=zt(y,m,d+1,0,0),out=[];
+  for(const T of SEQ){const b=P[T].b,l0=lonOf(b,t0),l1=lonOf(b,t1);
+    for(const N of SEQ)for(const A of ASP){const mo=TRO[T]*A.o;
+      for(const x of A.a%180?[nat[N]+A.a,nat[N]-A.a]:[nat[N]+A.a]){
+        const d0=sd(l0,x),d1=sd(l1,x),ex=Math.sign(d0)!==Math.sign(d1)&&Math.abs(d0-d1)<40,orb=ex?0:Math.min(Math.abs(d0),Math.abs(d1));
+        if(orb>mo)continue;
+        const s=TRW[T]*NAW[N]*A.w*(T==='לבנה'||ex?1:.6)*(.35+.65*(1-orb/mo))+(ex?(T==='לבנה'?1:2):0);
+        out.push({T,N,A,x,ex,orb,s,key:T+N+A.a,t0,t1});
+      }}}
+  return out.sort((p,q)=>q.s-p.s);
+}
+// today's headline transit; if it is the same one as yesterday's, the next one, so the sentence changes daily
+function transitOfDay(day,nat){
+  const L=transitsOf(day,nat);if(!L.length)return null;
+  const prev=transitsOf(new Date(day.getFullYear(),day.getMonth(),day.getDate()-1,12),nat)[0];
+  return{tr:prev&&L[0].key===prev.key&&L[1]?L[1]:L[0],list:L};
+}
+// when it is exact, and from when to when it is within orb
+function transitTimes(tr){
+  const b=P[tr.T].b,f=t=>sd(lonOf(b,t),tr.x),mo=TRO[tr.T]*tr.A.o;
+  let at=null;
+  if(tr.ex){let a=tr.t0,c=tr.t1,fa=f(a);
+    for(let i=0;i<22;i++){const mid=new Date((a.getTime()+c.getTime())/2),fm=f(mid);if(Math.sign(fm)===Math.sign(fa)){a=mid;fa=fm;}else c=mid;}
+    at=new Date((a.getTime()+c.getTime())/2);}
+  const st=TRSTEP[tr.T]*3600000,c0=at||(Math.abs(f(tr.t0))<Math.abs(f(tr.t1))?tr.t0:tr.t1);
+  const edge=dir=>{let t=c0;for(let i=0;i<240;i++){const n=new Date(t.getTime()+dir*st);if(Math.abs(f(n))>mo)return t;t=n;}return t;};
+  return{at,from:edge(-1),to:edge(1)};
+}
+// the headline sentence of a day; never the same sentence as `avoid` (yesterday's)
+function headFor(day,nat,b,avoid){
+  const D=transitOfDay(day,nat);if(!D)return null;
+  const{T,N,A,key}=D.tr,kind=A.k==='c'&&(T==='מאדים'||T==='שבתאי')?'q':A.k,r2=rng(hash(b.date+iso(day)+key));
+  let i=Math.floor(r2()*3);if(HEADS[N][kind][i]===avoid)i=(i+1)%3;
+  return{...D,kind,r2,head:HEADS[N][kind][i]};
+}
+function transitView(day,b){
+  const nat=natalOf(b),yd=headFor(new Date(day.getFullYear(),day.getMonth(),day.getDate()-1,12),nat,b,null);
+  const D=headFor(day,nat,b,yd&&yd.head);if(!D)return null;
+  const{tr,list,kind,r2,head}=D,{T,N,A}=tr,now=lonOf(P[T].b,new Date((tr.t0.getTime()+tr.t1.getTime())/2));
+  const tense=kind==='q'||kind==='o';
+  const tn=n=>FEM(n)?'ה'+n:n,sgn=l=>M[Math.floor(norm(l)/30)].n,dm=t=>{const p=tzp(t);return`${p.d}.${p.m}`};
+  const tm=transitTimes(tr),same=t=>dm(t)===dm(new Date((tr.t0.getTime()+tr.t1.getTime())/2));
+  const hmd=t=>same(t)?hm(t):`${hm(t)} (${dm(t)})`;
+  const when=T==='לבנה'?`פעיל בערך בין <time dir="ltr">${hmd(tm.from)}</time> ל־<time dir="ltr">${hmd(tm.to)}</time>`:`פעיל מ־${dm(tm.from)} עד ${dm(tm.to)}`;
+  const retro=T!=='לבנה'&&T!=='חמה'&&isRetro(P[T].b,tr.t0);
+  const sum=`יש היום ${A.nn} בין ${NOW[T]} לבין ${YOU[N]}. ${tense?P[N].hard:P[N].good}`;
+  const dd=DD[N].map(a=>pick(a,r2,2));
+  const bg=list.filter(x=>x!==tr&&x.T!==T&&x.T!=='לבנה').slice(0,2).map(x=>`${tn(x.T)} ב${x.A.n} ל${x.N} שלך`);
+  return{head,sum,dd,
+    eq:`<span>${tn(T)} עכשיו ב${sgn(now)}</span><i>${A.n}</i><span>${tn(N)} שלך ב${sgn(nat[N])}</span>`,
+    why:`<p class="tr-key"><b>${tn(T)}${retro?' (בנסיגה)':''}, עכשיו במזל ${sgn(now)}, ב${A.n} ל${N} שלך מלידה</b> (במזל ${sgn(nat[N])}). ${tm.at?`בשיא בשעה <time dir="ltr">${hm(tm.at)}</time>. `:''}${when}.</p>
+   <p><b>הכוכב של עכשיו</b>, ${tn(T)}: ${NOW[T]}. <b>החלק בך שמושפע</b>, ${N} שלך מלידה: ${YOU[N]}. <b>הזווית</b>, ${A.n}: ${A.x}.</p>
+   ${bg.length?`<p><b>עוד ברקע:</b> ${bg.join(' · ')}.</p>`:''}
+   ${!b.time&&N==='לבנה'?'<p>בלי שעת לידה מפת הלידה חושבה ל־12:00, ולכן מקום הלבנה בלידה משוער (בערך 6° לכל צד). אפשר להוסיף שעת לידה בפרופיל.</p>':''}`};
+}
+
 function render(){
   const city=CITIES[birth.city??0],il=city[4]==='IL',BI=birthHour(birth);
   TZ=city[3];
@@ -1080,10 +1215,16 @@ function render(){
 
   // general forecast, horoscope style
   const general=`${MOONTXT[moon.sign]} ${moon.sign===ui?'הלבנה עוברת היום במזל שלך, ולכן הרגשות והאינטואיציה שלך חזקים במיוחד.':moon.re.s<0?'הלבנה במצב מאתגר למזלך, אז כדאי לא לקחת דברים ללב.':moon.re.s>0?'הלבנה במזל שמתאים לך, ולכן תרגיש נוח ובטוח יותר.':''} ${pers}`;
-  $('forecast').innerHTML=`<p class="eyebrow">ההורוסקופ היומי · מזל ${mz.n}</p><h3>${head}</h3>
-   <p class="summary">${general}</p>
+  // the day's transit (Co-Star style) leads the card; the old sky-by-mazal text is the fallback
+  let TV=null;try{TV=transitView(day,birth);}catch(e){TV=null;}
+  const dayHead=TV?TV.head:head,daySum=TV?TV.sum:general;
+  $('forecast').innerHTML=`<p class="eyebrow">ההורוסקופ היומי · מזל ${mz.n}</p><h3>${dayHead}</h3>
+   ${TV?`<div class="tr-eq">${TV.eq}</div>`:''}
+   <p class="summary">${daySum}</p>
+   ${TV?`<div class="tr-dd"><div><b>כן</b>${TV.dd[0].join(', ')}</div><div><b>לא</b>${TV.dd[1].join(', ')}</div></div>`:''}
    <details class="why"><summary>מה קורה בשמיים היום ולמה</summary>
-   <p><b>הלבנה במזל ${moonM.n}</b>, ${moon.re.t}.</p>
+   ${TV?TV.why:''}
+   <p><b>הלבנה במזל ${moonM.n}</b>, ${moon.re.t}.${TV?' '+MOONTXT[moon.sign]:''}</p>
    ${ingTxt?`<p><b>מעברים היום:</b> ${ingTxt}.</p>`:''}
    <p><b>${gem(dh.day)} בחודש.</b> ${phase}</p>
    <p><b>החמה במזל ${sunM.n}</b>, ${sun.re.t}. בתקופה הזו מודגשים ${sunM.traits.join(', ')}. ${sun.re.s>0?P['חמה'].good:sun.re.s<0?P['חמה'].hard:''}</p>
@@ -1094,7 +1235,7 @@ function render(){
   const lucky=1+((moon.sign+1)*(ui+3)+dh.day*7+w*11+Math.floor(r()*13))%49;
   const myHour=upcoming([mine]),bestHour=upcoming([best.name]);
   const compat=moon.re.s>0&&moon.sign!==ui?moon.sign:[(ui+4)%12,(ui+8)%12,(ui+2)%12,(ui+10)%12][dh.day%4];
-  CARD={iso:iso(day),dh:dh.str,dow:dayDow.d,name:birth.name,l:mz.l,n:mz.n,lvl,score,head,pers};
+  CARD={iso:iso(day),dh:dh.str,dow:dayDow.d,name:birth.name,l:mz.l,n:mz.n,lvl,score,head:dayHead,pers:TV?TV.sum:pers};
   $('quick').innerHTML=`
    <div class="tile"><span class="k">מספר המזל</span><span class="v big">${lucky}</span><small>${gem(lucky)}${lucky===18?' · חי':lucky===26?' · כמניין השם':''}</small></div>
    <div class="tile"><span class="k">אנרגיה יומית</span><span class="v">${lvl}</span><div class="meter"><i class="${L.c}" style="width:${score}%"></i></div><small>${score} מתוך 100</small></div>
